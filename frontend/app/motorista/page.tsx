@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { ref, set, onValue } from "firebase/database";
+import { ref, set, onValue, update } from "firebase/database";
 
 import { auth, db } from "../firebase";
 
@@ -29,13 +29,13 @@ export default function Motorista() {
     return () => unsub();
   }, []);
 
-  // 📡 STATUS DO MOTORISTA (PRÓPRIO USUÁRIO)
+  // 📡 ESCUTA STATUS DO MOTORISTA EM TEMPO REAL
   useEffect(() => {
     if (!usuario?.uid) return;
 
-    const refMotorista = ref(db, `onibus/${usuario.uid}`);
+    const motoristaRef = ref(db, `onibus/${usuario.uid}`);
 
-    const unsub = onValue(refMotorista, (snapshot) => {
+    const unsub = onValue(motoristaRef, (snapshot) => {
       const data = snapshot.val();
 
       if (data?.ativo) {
@@ -54,27 +54,38 @@ export default function Motorista() {
   async function iniciarViagem(rota: "Aldeia Park" | "Buriti") {
     if (!usuario?.uid || iniciado) return;
 
-    const refMotorista = ref(db, `onibus/${usuario.uid}`);
+    const motoristaRef = ref(db, `onibus/${usuario.uid}`);
 
-    await set(refMotorista, {
+    // cria registro inicial
+    await set(motoristaRef, {
       rota,
       motorista: usuario.email,
       ativo: true,
-      lat: null,
-      lng: null,
+      lat: 0,
+      lng: 0,
       iniciadoEm: Date.now(),
     });
 
-    const id = navigator.geolocation.watchPosition(async (pos) => {
-      await set(ref(db, `onibus/${usuario.uid}`), {
-        rota,
-        motorista: usuario.email,
-        ativo: true,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        atualizadoEm: Date.now(),
-      });
-    });
+    // GPS ao vivo
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+
+        update(motoristaRef, {
+          lat: latitude,
+          lng: longitude,
+          atualizadoEm: Date.now(),
+        });
+      },
+      (err) => {
+        console.error("Erro GPS:", err);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000,
+      }
+    );
 
     setWatchId(id);
   }
@@ -83,16 +94,17 @@ export default function Motorista() {
   async function pararViagem() {
     if (!usuario?.uid) return;
 
+    const motoristaRef = ref(db, `onibus/${usuario.uid}`);
+
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
     }
 
-    await set(ref(db, `onibus/${usuario.uid}`), {
-      rota: "",
-      motorista: usuario.email,
+    await update(motoristaRef, {
       ativo: false,
       lat: null,
       lng: null,
+      rota: "",
     });
 
     setWatchId(null);
@@ -110,12 +122,20 @@ export default function Motorista() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f3f4f6", padding: 30 }}>
-      <div style={{ maxWidth: 700, margin: "0 auto", background: "white", padding: 30, borderRadius: 20 }}>
-
+      <div
+        style={{
+          maxWidth: 700,
+          margin: "0 auto",
+          background: "white",
+          padding: 30,
+          borderRadius: 20,
+        }}
+      >
         <h1>👨‍✈️ Área do Motorista</h1>
 
         <p><strong>Email:</strong> {usuario?.email}</p>
 
+        {/* STATUS */}
         <div
           style={{
             marginTop: 20,
@@ -136,8 +156,14 @@ export default function Motorista() {
         )}
 
         {/* BOTÕES */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 }}>
-
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            marginTop: 20,
+          }}
+        >
           <button
             onClick={() => iniciarViagem("Aldeia Park")}
             disabled={iniciado}
@@ -165,14 +191,13 @@ export default function Motorista() {
           <button onClick={sair} style={botao("#2563eb", false)}>
             🚪 Sair
           </button>
-
         </div>
       </div>
     </div>
   );
 }
 
-// 🎨 estilo botão
+// 🎨 ESTILO BOTÃO
 function botao(color: string, disabled: boolean): React.CSSProperties {
   return {
     padding: "14px 20px",
