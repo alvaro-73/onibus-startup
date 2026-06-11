@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "./firebase";
+import { ref, get } from "firebase/database";
+
+import { auth, db } from "./firebase";
 
 export default function Login() {
   const router = useRouter();
@@ -13,96 +14,72 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  async function entrar(tipo: "aluno" | "motorista") {
+  async function entrar() {
     try {
       setErro("");
+      setLoading(true);
 
-      // login real no Firebase
-      await signInWithEmailAndPassword(auth, email, senha);
+      // 1. login no Firebase Auth
+      const cred = await signInWithEmailAndPassword(auth, email, senha);
 
-      // redireciona conforme tipo
-      if (tipo === "aluno") {
-        router.push("/aluno");
-      } else {
-        router.push("/motorista");
+      const uid = cred.user.uid;
+
+      // 2. buscar tipo do usuário no Realtime Database
+      const snapshot = await get(ref(db, `usuarios/${uid}`));
+
+      const dados = snapshot.val();
+
+      if (!dados) {
+        setErro("Usuário não encontrado no banco de dados");
+        setLoading(false);
+        return;
       }
-    } catch (err) {
+
+      // 3. redirecionamento automático baseado no tipo
+      if (dados.tipo === "aluno") {
+        router.push("/aluno");
+      } else if (dados.tipo === "motorista") {
+        router.push("/motorista");
+      } else {
+        setErro("Tipo de usuário inválido");
+      }
+
+    } catch (error) {
       setErro("Email ou senha inválidos");
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        fontFamily: "Arial",
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          width: 420,
-          background: "white",
-          padding: 35,
-          borderRadius: 20,
-          boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
-        }}
-      >
-        {/* TÍTULO */}
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ margin: 0, fontSize: 40 }}>🚌 BusTrack</h1>
-          <p style={{ color: "#666", marginTop: 10 }}>
-            Sistema de Transporte Escolar
-          </p>
-        </div>
+    <div style={container}>
+      <div style={card}>
+        <h1>🚌 BusTrack</h1>
+        <p>Sistema de Transporte Escolar</p>
 
-        <h2 style={{ marginBottom: 20 }}>Entrar</h2>
-
-        {/* EMAIL */}
         <input
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={inputStyle}
+          style={input}
         />
 
-        {/* SENHA */}
         <input
           type="password"
           placeholder="Senha"
           value={senha}
           onChange={(e) => setSenha(e.target.value)}
-          style={inputStyle}
+          style={input}
         />
 
-        {/* ERRO */}
-        {erro && (
-          <p style={{ color: "red", marginBottom: 10 }}>
-            {erro}
-          </p>
-        )}
+        {erro && <p style={{ color: "red" }}>{erro}</p>}
 
-        {/* BOTÕES LOGIN */}
-        <button onClick={() => entrar("aluno")} style={botaoAzul}>
-          👨‍🎓 Entrar como Aluno
+        <button onClick={entrar} style={button} disabled={loading}>
+          {loading ? "Entrando..." : "Entrar"}
         </button>
-
-        <button onClick={() => entrar("motorista")} style={botaoVerde}>
-          👨‍✈️ Entrar como Motorista
-        </button>
-
-        {/* CADASTRO */}
-        <Link href="/cadastro">
-          <button style={botaoCadastro}>
-            📝 Criar conta
-          </button>
-        </Link>
       </div>
     </div>
   );
@@ -112,7 +89,25 @@ export default function Login() {
    ESTILOS
 ========================= */
 
-const inputStyle = {
+const container = {
+  minHeight: "100vh",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+  fontFamily: "Arial",
+};
+
+const card = {
+  background: "white",
+  padding: 30,
+  borderRadius: 18,
+  width: 420,
+  boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+  textAlign: "center" as const,
+};
+
+const input = {
   width: "100%",
   padding: 14,
   marginBottom: 12,
@@ -121,36 +116,10 @@ const inputStyle = {
   fontSize: 16,
 };
 
-const botaoAzul = {
+const button = {
   width: "100%",
   padding: 14,
   background: "#2563eb",
-  color: "white",
-  border: "none",
-  borderRadius: 12,
-  fontSize: 16,
-  fontWeight: "bold",
-  cursor: "pointer",
-  marginBottom: 10,
-};
-
-const botaoVerde = {
-  width: "100%",
-  padding: 14,
-  background: "#16a34a",
-  color: "white",
-  border: "none",
-  borderRadius: 12,
-  fontSize: 16,
-  fontWeight: "bold",
-  cursor: "pointer",
-  marginBottom: 10,
-};
-
-const botaoCadastro = {
-  width: "100%",
-  padding: 14,
-  background: "#0ea5e9",
   color: "white",
   border: "none",
   borderRadius: 12,
