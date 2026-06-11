@@ -1,8 +1,35 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "./firebase";
 
 export default function Login() {
+  const router = useRouter();
+
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
+
+  async function entrar(tipo: "aluno" | "motorista") {
+    try {
+      setErro("");
+
+      await signInWithEmailAndPassword(auth, email, senha);
+
+      // depois do login, manda para a área certa
+      if (tipo === "aluno") {
+        router.push("/aluno");
+      } else {
+        router.push("/motorista");
+      }
+    } catch (err) {
+      setErro("Email ou senha inválidos");
+    }
+  }
+
   return (
     <div
       style={{
@@ -25,113 +52,89 @@ export default function Login() {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 40,
-            }}
-          >
-            🚌 BusTrack
-          </h1>
+          <h1 style={{ margin: 0, fontSize: 40 }}>🚌 BusTrack</h1>
 
-          <p
-            style={{
-              color: "#666",
-              marginTop: 10,
-              marginBottom: 30,
-            }}
-          >
+          <p style={{ color: "#666", marginTop: 10, marginBottom: 30 }}>
             Sistema de Transporte Escolar
           </p>
         </div>
 
-        <h2
-          style={{
-            marginBottom: 20,
-            color: "#111827",
-          }}
+        <h2 style={{ marginBottom: 20 }}>Entrar</h2>
+
+        {/* EMAIL */}
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          style={inputStyle}
+        />
+
+        {/* SENHA */}
+        <input
+          type="password"
+          placeholder="Senha"
+          value={senha}
+          onChange={(e) => setSenha(e.target.value)}
+          style={inputStyle}
+        />
+
+        {/* ERRO */}
+        {erro && (
+          <p style={{ color: "red", marginBottom: 10 }}>
+            {erro}
+          </p>
+        )}
+
+        {/* BOTÕES DE LOGIN */}
+        <button
+          onClick={() => entrar("aluno")}
+          style={botaoAzul}
         >
-          Bem-vindo
-        </h2>
+          👨‍🎓 Entrar como Aluno
+        </button>
 
-        <p
-          style={{
-            color: "#6b7280",
-            marginBottom: 25,
-          }}
+        <button
+          onClick={() => entrar("motorista")}
+          style={botaoVerde}
         >
-          Escolha como deseja acessar o sistema.
-        </p>
-
-        <Link href="/aluno">
-          <button
-            style={{
-              width: "100%",
-              padding: 15,
-              marginBottom: 12,
-              border: "none",
-              borderRadius: 12,
-              background: "#2563eb",
-              color: "white",
-              fontSize: 16,
-              fontWeight: "bold",
-              cursor: "pointer",
-            }}
-          >
-            👨‍🎓 Entrar como Aluno
-          </button>
-        </Link>
-
-        <Link href="/cadastro">
-          <button
-            style={{
-              width: "100%",
-              padding: 15,
-              marginBottom: 12,
-              border: "none",
-              borderRadius: 12,
-              background: "#0ea5e9",
-              color: "white",
-              fontSize: 16,
-              fontWeight: "bold",
-              cursor: "pointer",
-            }}
-          >
-            📝 Criar Conta
-          </button>
-        </Link>
-
-        <Link href="/motorista">
-          <button
-            style={{
-              width: "100%",
-              padding: 15,
-              border: "none",
-              borderRadius: 12,
-              background: "#16a34a",
-              color: "white",
-              fontSize: 16,
-              fontWeight: "bold",
-              cursor: "pointer",
-            }}
-          >
-            👨‍✈️ Área do Motorista
-          </button>
-        </Link>
-
-        <div
-          style={{
-            marginTop: 25,
-            paddingTop: 20,
-            borderTop: "1px solid #e5e7eb",
-            textAlign: "center",
-            color: "#6b7280",
-            fontSize: 14,
-          }}
-        >
-          Startup Ônibus • Rastreamento em tempo real
-        </div>
+          👨‍✈️ Entrar como Motorista
+        </button>
       </div>
     </div>
   );
 }
+
+const inputStyle = {
+  width: "100%",
+  padding: 14,
+  marginBottom: 12,
+  borderRadius: 12,
+  border: "1px solid #ccc",
+  fontSize: 16,
+};
+
+const botaoAzul = {
+  width: "100%",
+  padding: 14,
+  background: "#2563eb",
+  color: "white",
+  border: "none",
+  borderRadius: 12,
+  fontSize: 16,
+  fontWeight: "bold",
+  cursor: "pointer",
+  marginBottom: 10,
+};
+
+const botaoVerde = {
+  width: "100%",
+  padding: 14,
+  background: "#16a34a",
+  color: "white",
+  border: "none",
+  borderRadius: 12,
+  fontSize: 16,
+  fontWeight: "bold",
+  cursor: "pointer",
+};
