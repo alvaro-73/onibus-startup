@@ -14,12 +14,10 @@ export default function Motorista() {
   const [usuario, setUsuario] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const [rotaAtiva, setRotaAtiva] = useState<"" | "Aldeia Park" | "Buriti">("");
   const [iniciado, setIniciado] = useState(false);
-
   const [watchId, setWatchId] = useState<number | null>(null);
 
-  // 🔐 LOGIN
+  // 📌 LOGIN
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setUsuario(user);
@@ -29,36 +27,28 @@ export default function Motorista() {
     return () => unsub();
   }, []);
 
-  // 📡 ESCUTA STATUS DO MOTORISTA EM TEMPO REAL
+  // 📡 ESCUTA STATUS DO PRÓPRIO MOTORISTA
   useEffect(() => {
     if (!usuario?.uid) return;
 
     const motoristaRef = ref(db, `onibus/${usuario.uid}`);
 
-    const unsub = onValue(motoristaRef, (snapshot) => {
-      const data = snapshot.val();
-
-      if (data?.ativo) {
-        setIniciado(true);
-        setRotaAtiva(data.rota);
-      } else {
-        setIniciado(false);
-        setRotaAtiva("");
-      }
+    const unsub = onValue(motoristaRef, (snap) => {
+      const data = snap.val();
+      setIniciado(!!data?.ativo);
     });
 
     return () => unsub();
   }, [usuario]);
 
   // ▶️ INICIAR VIAGEM
-  async function iniciarViagem(rota: "Aldeia Park" | "Buriti") {
+  async function iniciarViagem() {
     if (!usuario?.uid || iniciado) return;
 
     const motoristaRef = ref(db, `onibus/${usuario.uid}`);
 
-    // cria registro inicial
+    // cria registro único desse motorista
     await set(motoristaRef, {
-      rota,
       motorista: usuario.email,
       ativo: true,
       lat: 0,
@@ -66,7 +56,7 @@ export default function Motorista() {
       iniciadoEm: Date.now(),
     });
 
-    // GPS ao vivo
+    // GPS ao vivo (ATUALIZA SEM SOBRESCREVER)
     const id = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
@@ -102,9 +92,6 @@ export default function Motorista() {
 
     await update(motoristaRef, {
       ativo: false,
-      lat: null,
-      lng: null,
-      rota: "",
     });
 
     setWatchId(null);
@@ -121,26 +108,18 @@ export default function Motorista() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f3f4f6", padding: 30 }}>
-      <div
-        style={{
-          maxWidth: 700,
-          margin: "0 auto",
-          background: "white",
-          padding: 30,
-          borderRadius: 20,
-        }}
-      >
-        <h1>👨‍✈️ Área do Motorista</h1>
+    <div style={{ minHeight: "100vh", padding: 30, background: "#f3f4f6" }}>
+      <div style={{ maxWidth: 600, margin: "0 auto", background: "white", padding: 30, borderRadius: 20 }}>
+
+        <h1>👨‍✈️ Motorista</h1>
 
         <p><strong>Email:</strong> {usuario?.email}</p>
 
-        {/* STATUS */}
         <div
           style={{
             marginTop: 20,
             padding: 15,
-            borderRadius: 12,
+            borderRadius: 10,
             background: iniciado ? "#dcfce7" : "#fee2e2",
           }}
         >
@@ -149,64 +128,52 @@ export default function Motorista() {
           </strong>
         </div>
 
-        {iniciado && (
-          <p style={{ marginTop: 10 }}>
-            🚏 Rota atual: <strong>{rotaAtiva}</strong>
-          </p>
-        )}
-
-        {/* BOTÕES */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            marginTop: 20,
-          }}
-        >
+        <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
+          
           <button
-            onClick={() => iniciarViagem("Aldeia Park")}
+            onClick={iniciarViagem}
             disabled={iniciado}
-            style={botao("#22c55e", iniciado)}
+            style={{
+              padding: 14,
+              border: "none",
+              borderRadius: 10,
+              background: iniciado ? "#999" : "#22c55e",
+              color: "white",
+              cursor: iniciado ? "not-allowed" : "pointer",
+            }}
           >
-            ▶️ Aldeia Park
-          </button>
-
-          <button
-            onClick={() => iniciarViagem("Buriti")}
-            disabled={iniciado}
-            style={botao("#16a34a", iniciado)}
-          >
-            ▶️ Buriti
+            ▶️ Iniciar viagem
           </button>
 
           <button
             onClick={pararViagem}
             disabled={!iniciado}
-            style={botao("#ef4444", !iniciado)}
+            style={{
+              padding: 14,
+              border: "none",
+              borderRadius: 10,
+              background: "#ef4444",
+              color: "white",
+              opacity: iniciado ? 1 : 0.5,
+            }}
           >
             ⏹️ Parar
           </button>
 
-          <button onClick={sair} style={botao("#2563eb", false)}>
+          <button
+            onClick={sair}
+            style={{
+              padding: 14,
+              border: "none",
+              borderRadius: 10,
+              background: "#2563eb",
+              color: "white",
+            }}
+          >
             🚪 Sair
           </button>
         </div>
       </div>
     </div>
   );
-}
-
-// 🎨 ESTILO BOTÃO
-function botao(color: string, disabled: boolean): React.CSSProperties {
-  return {
-    padding: "14px 20px",
-    border: "none",
-    borderRadius: 12,
-    fontSize: 16,
-    background: color,
-    color: "white",
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.5 : 1,
-  };
 }
