@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { ref, get } from "firebase/database";
@@ -21,32 +22,27 @@ export default function Login() {
       setErro("");
       setLoading(true);
 
-      // 1. login no Firebase Auth
       const cred = await signInWithEmailAndPassword(auth, email, senha);
 
       const uid = cred.user.uid;
 
-      // 2. buscar tipo do usuário no Realtime Database
       const snapshot = await get(ref(db, `usuarios/${uid}`));
-
       const dados = snapshot.val();
 
       if (!dados) {
-        setErro("Usuário não encontrado no banco de dados");
-        setLoading(false);
+        setErro("Usuário não encontrado");
         return;
       }
 
-      // 3. redirecionamento automático baseado no tipo
       if (dados.tipo === "aluno") {
         router.push("/aluno");
       } else if (dados.tipo === "motorista") {
         router.push("/motorista");
       } else {
-        setErro("Tipo de usuário inválido");
+        setErro("Tipo inválido");
       }
 
-    } catch (error) {
+    } catch (err) {
       setErro("Email ou senha inválidos");
     } finally {
       setLoading(false);
@@ -56,7 +52,7 @@ export default function Login() {
   return (
     <div style={container}>
       <div style={card}>
-        <h1>🚌 BusTrack</h1>
+        <h1>🚌 FluxBus</h1>
         <p>Sistema de Transporte Escolar</p>
 
         <input
@@ -77,18 +73,22 @@ export default function Login() {
 
         {erro && <p style={{ color: "red" }}>{erro}</p>}
 
-        <button onClick={entrar} style={button} disabled={loading}>
+        <button onClick={entrar} style={button}>
           {loading ? "Entrando..." : "Entrar"}
         </button>
+
+        {/* 👇 BOTÃO DE CADASTRO */}
+        <Link href="/cadastro">
+          <button style={cadastroBtn}>
+            Criar conta
+          </button>
+        </Link>
       </div>
     </div>
   );
 }
 
-/* =========================
-   ESTILOS
-========================= */
-
+/* estilos */
 const container = {
   minHeight: "100vh",
   display: "flex",
@@ -103,8 +103,8 @@ const card = {
   padding: 30,
   borderRadius: 18,
   width: 420,
-  boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
   textAlign: "center" as const,
+  boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
 };
 
 const input = {
@@ -113,7 +113,6 @@ const input = {
   marginBottom: 12,
   borderRadius: 12,
   border: "1px solid #ccc",
-  fontSize: 16,
 };
 
 const button = {
@@ -123,7 +122,18 @@ const button = {
   color: "white",
   border: "none",
   borderRadius: 12,
-  fontSize: 16,
+  fontWeight: "bold",
+  cursor: "pointer",
+};
+
+const cadastroBtn = {
+  width: "100%",
+  padding: 14,
+  marginTop: 10,
+  background: "#0ea5e9",
+  color: "white",
+  border: "none",
+  borderRadius: 12,
   fontWeight: "bold",
   cursor: "pointer",
 };
