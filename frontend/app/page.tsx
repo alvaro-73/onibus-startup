@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "./firebase";
@@ -17,9 +18,10 @@ export default function Login() {
     try {
       setErro("");
 
+      // login real no Firebase
       await signInWithEmailAndPassword(auth, email, senha);
 
-      // depois do login, manda para a área certa
+      // redireciona conforme tipo
       if (tipo === "aluno") {
         router.push("/aluno");
       } else {
@@ -51,10 +53,10 @@ export default function Login() {
           boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
         }}
       >
+        {/* TÍTULO */}
         <div style={{ textAlign: "center" }}>
           <h1 style={{ margin: 0, fontSize: 40 }}>🚌 BusTrack</h1>
-
-          <p style={{ color: "#666", marginTop: 10, marginBottom: 30 }}>
+          <p style={{ color: "#666", marginTop: 10 }}>
             Sistema de Transporte Escolar
           </p>
         </div>
@@ -86,24 +88,29 @@ export default function Login() {
           </p>
         )}
 
-        {/* BOTÕES DE LOGIN */}
-        <button
-          onClick={() => entrar("aluno")}
-          style={botaoAzul}
-        >
+        {/* BOTÕES LOGIN */}
+        <button onClick={() => entrar("aluno")} style={botaoAzul}>
           👨‍🎓 Entrar como Aluno
         </button>
 
-        <button
-          onClick={() => entrar("motorista")}
-          style={botaoVerde}
-        >
+        <button onClick={() => entrar("motorista")} style={botaoVerde}>
           👨‍✈️ Entrar como Motorista
         </button>
+
+        {/* CADASTRO */}
+        <Link href="/cadastro">
+          <button style={botaoCadastro}>
+            📝 Criar conta
+          </button>
+        </Link>
       </div>
     </div>
   );
 }
+
+/* =========================
+   ESTILOS
+========================= */
 
 const inputStyle = {
   width: "100%",
@@ -131,6 +138,19 @@ const botaoVerde = {
   width: "100%",
   padding: 14,
   background: "#16a34a",
+  color: "white",
+  border: "none",
+  borderRadius: 12,
+  fontSize: 16,
+  fontWeight: "bold",
+  cursor: "pointer",
+  marginBottom: 10,
+};
+
+const botaoCadastro = {
+  width: "100%",
+  padding: 14,
+  background: "#0ea5e9",
   color: "white",
   border: "none",
   borderRadius: 12,
