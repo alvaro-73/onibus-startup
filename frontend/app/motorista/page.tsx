@@ -3,171 +3,397 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { ref, set, onValue, update } from "firebase/database";
+import {
+  onAuthStateChanged,
+  signOut,
+} from "firebase/auth";
 
-import { auth, db } from "../firebase";
+import {
+  ref,
+  set,
+  onValue,
+} from "firebase/database";
+
+import {
+  auth,
+  db,
+} from "../firebase";
 
 export default function Motorista() {
   const router = useRouter();
 
-  const [usuario, setUsuario] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [usuario, setUsuario] =
+    useState<any>(null);
 
-  const [iniciado, setIniciado] = useState(false);
-  const [watchId, setWatchId] = useState<number | null>(null);
+  const [loadingAuth, setLoadingAuth] =
+    useState(true);
 
-  // 📌 LOGIN
+  const [iniciado, setIniciado] =
+    useState(false);
+
+  const [motoristaAtivo, setMotoristaAtivo] =
+    useState("");
+
+  const [watchId, setWatchId] =
+    useState<number | null>(null);
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setUsuario(user);
-      setLoading(false);
-    });
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        (user) => {
+          setUsuario(user);
+          setLoadingAuth(false);
+        }
+      );
 
-    return () => unsub();
+    return () => unsubscribe();
   }, []);
 
-  // 📡 ESCUTA STATUS DO PRÓPRIO MOTORISTA
   useEffect(() => {
-    if (!usuario?.uid) return;
+    const viagemRef =
+      ref(db, "viagem");
 
-    const motoristaRef = ref(db, `onibus/${usuario.uid}`);
+    const unsubscribe =
+      onValue(
+        viagemRef,
+        (snapshot) => {
+          const data =
+            snapshot.val();
 
-    const unsub = onValue(motoristaRef, (snap) => {
-      const data = snap.val();
-      setIniciado(!!data?.ativo);
-    });
+          if (data?.ativa) {
+            setIniciado(true);
 
-    return () => unsub();
-  }, [usuario]);
+            setMotoristaAtivo(
+              data.motorista || ""
+            );
+          } else {
+            setIniciado(false);
 
-  // ▶️ INICIAR VIAGEM
+            setMotoristaAtivo("");
+          }
+        }
+      );
+
+    return () => unsubscribe();
+  }, []);
+
   async function iniciarViagem() {
-    if (!usuario?.uid || iniciado) return;
+    if (iniciado) return;
 
-    const motoristaRef = ref(db, `onibus/${usuario.uid}`);
+    try {
+      await set(
+        ref(db, "viagem"),
+        {
+          ativa: true,
 
-    // cria registro único desse motorista
-    await set(motoristaRef, {
-      motorista: usuario.email,
-      ativo: true,
-      lat: 0,
-      lng: 0,
-      iniciadoEm: Date.now(),
-    });
+          motorista:
+            usuario?.email ||
+            "Motorista",
 
-    // GPS ao vivo (ATUALIZA SEM SOBRESCREVER)
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
+          iniciadoEm:
+            Date.now(),
+        }
+      );
 
-        update(motoristaRef, {
-          lat: latitude,
-          lng: longitude,
-          atualizadoEm: Date.now(),
-        });
-      },
-      (err) => {
-        console.error("Erro GPS:", err);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000,
-      }
-    );
+      const id =
+        navigator.geolocation.watchPosition(
+          async (
+            position
+          ) => {
+            const lat =
+              position.coords
+                .latitude;
 
-    setWatchId(id);
-  }
+            const lng =
+              position.coords
+                .longitude;
 
-  // ⏹️ PARAR VIAGEM
-  async function pararViagem() {
-    if (!usuario?.uid) return;
+            await set(
+              ref(db, "onibus"),
+              {
+                lat,
+                lng,
+                atualizadoEm:
+                  Date.now(),
+              }
+            );
+          },
+          (error) => {
+            console.log(
+              error
+            );
+          },
+          {
+            enableHighAccuracy:
+              true,
+          }
+        );
 
-    const motoristaRef = ref(db, `onibus/${usuario.uid}`);
-
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
+      setWatchId(id);
+    } catch (error) {
+      console.log(error);
     }
-
-    await update(motoristaRef, {
-      ativo: false,
-    });
-
-    setWatchId(null);
   }
 
-  // 🚪 SAIR
+  async function pararViagem() {
+    try {
+      if (
+        watchId !== null
+      ) {
+        navigator.geolocation.clearWatch(
+          watchId
+        );
+      }
+
+      await set(
+        ref(db, "viagem"),
+        {
+          ativa: false,
+
+          motorista: "",
+
+          iniciadoEm: null,
+        }
+      );
+
+      setWatchId(null);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
   async function sair() {
     await signOut(auth);
+
     router.push("/");
   }
 
-  if (loading) {
-    return <h2 style={{ padding: 30 }}>Carregando...</h2>;
+  if (loadingAuth) {
+    return (
+      <div
+        style={{
+          padding: 40,
+        }}
+      >
+        <h2>
+          Carregando...
+        </h2>
+      </div>
+    );
   }
 
   return (
-    <div style={{ minHeight: "100vh", padding: 30, background: "#f3f4f6" }}>
-      <div style={{ maxWidth: 600, margin: "0 auto", background: "white", padding: 30, borderRadius: 20 }}>
+    <div
+      style={{
+        minHeight:
+          "100vh",
 
-        <h1>👨‍✈️ Motorista</h1>
+        background:
+          "#f3f4f6",
 
-        <p><strong>Email:</strong> {usuario?.email}</p>
+        padding: 30,
+
+        fontFamily:
+          "Arial",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 700,
+
+          margin:
+            "0 auto",
+
+          background:
+            "white",
+
+          padding: 30,
+
+          borderRadius:
+            20,
+
+          boxShadow:
+            "0 10px 30px rgba(0,0,0,0.1)",
+        }}
+      >
+        <h1
+          style={{
+            marginTop: 0,
+          }}
+        >
+          👨‍✈️ Área do
+          Motorista
+        </h1>
+
+        <p>
+          <strong>
+            Logado:
+          </strong>{" "}
+          {
+            usuario?.email
+          }
+        </p>
 
         <div
           style={{
             marginTop: 20,
+
+            marginBottom:
+              20,
+
             padding: 15,
-            borderRadius: 10,
-            background: iniciado ? "#dcfce7" : "#fee2e2",
+
+            borderRadius:
+              12,
+
+            background:
+              iniciado
+                ? "#dcfce7"
+                : "#fee2e2",
           }}
         >
           <strong>
-            Status: {iniciado ? "🟢 Em viagem" : "🔴 Parado"}
+            Status:{" "}
+            {iniciado
+              ? "🟢 Viagem em andamento"
+              : "🔴 Viagem parada"}
           </strong>
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
-          
-          <button
-            onClick={iniciarViagem}
-            disabled={iniciado}
+        {iniciado && (
+          <div
             style={{
-              padding: 14,
-              border: "none",
-              borderRadius: 10,
-              background: iniciado ? "#999" : "#22c55e",
-              color: "white",
-              cursor: iniciado ? "not-allowed" : "pointer",
+              marginBottom:
+                25,
+
+              color:
+                "#166534",
+
+              fontWeight:
+                "bold",
             }}
           >
-            ▶️ Iniciar viagem
+            Motorista ativo:
+            {" "}
+            {
+              motoristaAtivo
+            }
+          </div>
+        )}
+
+        <div
+          style={{
+            display:
+              "flex",
+
+            gap: 15,
+
+            flexWrap:
+              "wrap",
+          }}
+        >
+          <button
+            onClick={
+              iniciarViagem
+            }
+            disabled={
+              iniciado
+            }
+            style={{
+              padding:
+                "16px 24px",
+
+              fontSize: 18,
+
+              border:
+                "none",
+
+              borderRadius:
+                12,
+
+              background:
+                iniciado
+                  ? "#9ca3af"
+                  : "#22c55e",
+
+              color:
+                "white",
+
+              cursor:
+                iniciado
+                  ? "not-allowed"
+                  : "pointer",
+            }}
+          >
+            ▶️ Iniciar
+            viagem
           </button>
 
           <button
-            onClick={pararViagem}
-            disabled={!iniciado}
+            onClick={
+              pararViagem
+            }
+            disabled={
+              !iniciado
+            }
             style={{
-              padding: 14,
-              border: "none",
-              borderRadius: 10,
-              background: "#ef4444",
-              color: "white",
-              opacity: iniciado ? 1 : 0.5,
+              padding:
+                "16px 24px",
+
+              fontSize: 18,
+
+              border:
+                "none",
+
+              borderRadius:
+                12,
+
+              background:
+                "#ef4444",
+
+              color:
+                "white",
+
+              opacity:
+                iniciado
+                  ? 1
+                  : 0.5,
+
+              cursor:
+                iniciado
+                  ? "pointer"
+                  : "not-allowed",
             }}
           >
             ⏹️ Parar
+            viagem
           </button>
 
           <button
-            onClick={sair}
+            onClick={
+              sair
+            }
             style={{
-              padding: 14,
-              border: "none",
-              borderRadius: 10,
-              background: "#2563eb",
-              color: "white",
+              padding:
+                "16px 24px",
+
+              fontSize: 18,
+
+              border:
+                "none",
+
+              borderRadius:
+                12,
+
+              background:
+                "#2563eb",
+
+              color:
+                "white",
+
+              cursor:
+                "pointer",
             }}
           >
             🚪 Sair
