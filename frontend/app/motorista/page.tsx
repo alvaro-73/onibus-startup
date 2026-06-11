@@ -2,41 +2,45 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set, onValue } from "firebase/database";
+
 import { auth, db } from "../firebase";
 
 export default function Motorista() {
   const router = useRouter();
 
   const [usuario, setUsuario] = useState<any>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const [rotaAtiva, setRotaAtiva] = useState<"Aldeia Park" | "Buriti" | "">("");
+  const [rotaAtiva, setRotaAtiva] = useState<"" | "Aldeia Park" | "Buriti">("");
   const [iniciado, setIniciado] = useState(false);
 
   const [watchId, setWatchId] = useState<number | null>(null);
 
-  // 🔐 auth
+  // 🔐 LOGIN
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setUsuario(user);
-      setLoadingAuth(false);
+      setLoading(false);
     });
 
     return () => unsub();
   }, []);
 
-  // 📡 status viagem geral
+  // 📡 STATUS DO MOTORISTA (PRÓPRIO USUÁRIO)
   useEffect(() => {
-    const viagemRef = ref(db, "viagem");
+    if (!usuario?.uid) return;
 
-    const unsub = onValue(viagemRef, (snapshot) => {
+    const refMotorista = ref(db, `onibus/${usuario.uid}`);
+
+    const unsub = onValue(refMotorista, (snapshot) => {
       const data = snapshot.val();
 
-      if (data?.ativa) {
+      if (data?.ativo) {
         setIniciado(true);
-        setRotaAtiva(data.rota || "");
+        setRotaAtiva(data.rota);
       } else {
         setIniciado(false);
         setRotaAtiva("");
@@ -44,29 +48,30 @@ export default function Motorista() {
     });
 
     return () => unsub();
-  }, []);
+  }, [usuario]);
 
-  // ▶️ iniciar viagem por rota
+  // ▶️ INICIAR VIAGEM
   async function iniciarViagem(rota: "Aldeia Park" | "Buriti") {
-    if (iniciado) return;
+    if (!usuario?.uid || iniciado) return;
 
-    await set(ref(db, "viagem"), {
-      ativa: true,
+    const refMotorista = ref(db, `onibus/${usuario.uid}`);
+
+    await set(refMotorista, {
       rota,
-      motorista: usuario?.email || "Motorista",
+      motorista: usuario.email,
+      ativo: true,
+      lat: null,
+      lng: null,
       iniciadoEm: Date.now(),
     });
 
     const id = navigator.geolocation.watchPosition(async (pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-
-      // 🔥 SEPARADO POR ROTA
-      const caminho = rota === "Aldeia Park" ? "onibus/aldeiaPark" : "onibus/buriti";
-
-      await set(ref(db, caminho), {
-        lat,
-        lng,
+      await set(ref(db, `onibus/${usuario.uid}`), {
+        rota,
+        motorista: usuario.email,
+        ativo: true,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
         atualizadoEm: Date.now(),
       });
     });
@@ -74,29 +79,32 @@ export default function Motorista() {
     setWatchId(id);
   }
 
-  // ⏹️ parar viagem
+  // ⏹️ PARAR VIAGEM
   async function pararViagem() {
+    if (!usuario?.uid) return;
+
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
     }
 
-    await set(ref(db, "viagem"), {
-      ativa: false,
+    await set(ref(db, `onibus/${usuario.uid}`), {
       rota: "",
-      motorista: "",
-      iniciadoEm: null,
+      motorista: usuario.email,
+      ativo: false,
+      lat: null,
+      lng: null,
     });
 
     setWatchId(null);
   }
 
-  // 🚪 sair
+  // 🚪 SAIR
   async function sair() {
     await signOut(auth);
     router.push("/");
   }
 
-  if (loadingAuth) {
+  if (loading) {
     return <h2 style={{ padding: 30 }}>Carregando...</h2>;
   }
 
@@ -110,8 +118,9 @@ export default function Motorista() {
 
         <div
           style={{
+            marginTop: 20,
             padding: 15,
-            borderRadius: 10,
+            borderRadius: 12,
             background: iniciado ? "#dcfce7" : "#fee2e2",
           }}
         >
@@ -122,11 +131,11 @@ export default function Motorista() {
 
         {iniciado && (
           <p style={{ marginTop: 10 }}>
-            🚏 Rota ativa: <strong>{rotaAtiva}</strong>
+            🚏 Rota atual: <strong>{rotaAtiva}</strong>
           </p>
         )}
 
-        {/* BOTÕES ROTAS */}
+        {/* BOTÕES */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 }}>
 
           <button
@@ -134,7 +143,7 @@ export default function Motorista() {
             disabled={iniciado}
             style={botao("#22c55e", iniciado)}
           >
-            ▶️ Iniciar Aldeia Park
+            ▶️ Aldeia Park
           </button>
 
           <button
@@ -142,7 +151,7 @@ export default function Motorista() {
             disabled={iniciado}
             style={botao("#16a34a", iniciado)}
           >
-            ▶️ Iniciar Buriti
+            ▶️ Buriti
           </button>
 
           <button
@@ -150,7 +159,7 @@ export default function Motorista() {
             disabled={!iniciado}
             style={botao("#ef4444", !iniciado)}
           >
-            ⏹️ Parar viagem
+            ⏹️ Parar
           </button>
 
           <button onClick={sair} style={botao("#2563eb", false)}>
@@ -163,8 +172,8 @@ export default function Motorista() {
   );
 }
 
-// 🎨 helper de estilo
-function botao(color: string, disabled: boolean) {
+// 🎨 estilo botão
+function botao(color: string, disabled: boolean): React.CSSProperties {
   return {
     padding: "14px 20px",
     border: "none",
@@ -174,5 +183,5 @@ function botao(color: string, disabled: boolean) {
     color: "white",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.5 : 1,
-  } as React.CSSProperties;
+  };
 }
