@@ -52,7 +52,7 @@ export default function Home() {
   const [historico, setHistorico] = useState<any[]>([]);
   const [eta, setEta] = useState<number | null>(null);
 
-  // 🚍 ESCUTA ONIBUS EM TEMPO REAL
+  // 🚍 ONIBUS EM TEMPO REAL (CORRIGIDO)
   useEffect(() => {
     const rota = bairro === "Buriti" ? "buriti" : "aldeiaPark";
 
@@ -68,8 +68,16 @@ export default function Home() {
     });
 
     const unsub2 = onValue(histRef, (snap) => {
-      const data = snap.val() || {};
-      setHistorico(Object.values(data));
+      const data = snap.val();
+
+      if (!data) {
+        setHistorico([]);
+        return;
+      }
+
+      // 🔥 CORREÇÃO IMPORTANTE
+      const lista = Object.values(data).filter(Boolean);
+      setHistorico(lista);
     });
 
     return () => {
@@ -78,7 +86,7 @@ export default function Home() {
     };
   }, [bairro]);
 
-  // 🧠 FUNÇÃO IA (ETA SIMPLES REAL)
+  // 🧠 IA DE ETA (CORRIGIDA)
   function calcularETA(lista: any[], destino: [number, number]) {
     if (!lista || lista.length < 2) return null;
 
@@ -89,6 +97,7 @@ export default function Home() {
 
     function distancia(a: any, b: any) {
       const R = 6371;
+
       const dLat = toRad(b.lat - a.lat);
       const dLng = toRad(b.lng - a.lng);
 
@@ -106,21 +115,26 @@ export default function Home() {
     const tempoMs = ultimo.timestamp - anterior.timestamp;
     const horas = tempoMs / 3600000;
 
-    const velocidade = distPercorrida / (horas || 0.0001);
+    // 🔥 EVITA BUG
+    const velocidade =
+      horas > 0 ? distPercorrida / horas : 30;
 
     const distDestino = distancia(ultimo, {
       lat: destino[0],
       lng: destino[1],
     });
 
-    const etaHoras = distDestino / (velocidade || 1);
+    const etaHoras = distDestino / (velocidade || 30);
 
     return Math.max(Math.round(etaHoras * 60), 1);
   }
 
-  // 🧠 ATUALIZA ETA AUTOMATICAMENTE
+  // 🧠 ATUALIZA ETA (CORRIGIDO)
   useEffect(() => {
-    if (!historico.length) return;
+    if (!historico || historico.length < 2) {
+      setEta(null);
+      return;
+    }
 
     const rota =
       bairro === "Buriti"
@@ -131,10 +145,14 @@ export default function Home() {
 
     const tempo = calcularETA(historico, destino);
 
-    setEta(tempo);
+    if (tempo && !isNaN(tempo)) {
+      setEta(tempo);
+    } else {
+      setEta(null);
+    }
   }, [historico, bairro]);
 
-  // 📍 ROTAS
+  // 📍 ROTAS (ORIGINAL)
   useEffect(() => {
     const rota =
       bairro === "Buriti"
@@ -242,7 +260,7 @@ export default function Home() {
           </select>
         </div>
 
-        {/* 🧠 IA ETA */}
+        {/* 🧠 IA */}
         <div style={{
           marginTop: 15,
           background: "#0f172a",
