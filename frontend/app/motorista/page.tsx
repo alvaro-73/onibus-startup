@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ref, set, onValue } from "firebase/database";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 type Rota = "aldeiaPark" | "buriti";
 
@@ -28,46 +29,35 @@ const paradasBuriti: Parada[] = [
 ];
 
 export default function Motorista() {
-  const [rotaSelecionada, setRotaSelecionada] = useState<Rota>("aldeiaPark");
+  const [usuario, setUsuario] = useState<any>(null);
+
+  const [rotaSelecionada, setRotaSelecionada] =
+    useState<Rota>("aldeiaPark");
+
+  const [viagemAtiva, setViagemAtiva] = useState(false);
+
+  const [watchId, setWatchId] = useState<number | null>(null);
+
+  const [posicao, setPosicao] = useState({ lat: 0, lng: 0 });
 
   const [alerta, setAlerta] = useState(false);
   const [justificativa, setJustificativa] = useState("");
-
-  const [posicao, setPosicao] = useState({ lat: 0, lng: 0 });
 
   const rotaAtual =
     rotaSelecionada === "buriti"
       ? paradasBuriti
       : paradasAldeiaPark;
 
-  // 🚍 GPS + DETECÇÃO DE ROTA
+  // 🔐 AUTH
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setUsuario(user);
+    });
 
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
+    return () => unsub();
+  }, []);
 
-        setPosicao({ lat, lng });
-
-        verificarDesvio(lat, lng);
-
-        // 🚍 posição atual
-        set(ref(db, `onibus/${rotaSelecionada}`), {
-          lat,
-          lng,
-          atualizadoEm: Date.now(),
-        });
-      },
-      (err) => console.log(err),
-      { enableHighAccuracy: true }
-    );
-
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [rotaSelecionada]);
-
-  // 🧠 DISTÂNCIA ENTRE DOIS PONTOS
+  // 🧠 DISTÂNCIA
   function distancia(a: any, b: any) {
     const R = 6371;
     const toRad = (v: number) => (v * Math.PI) / 180;
@@ -84,7 +74,6 @@ export default function Motorista() {
     return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
   }
 
-  // 📍 distância até rota
   function distanciaDaRota(pos: any, rota: Parada[]) {
     let menor = Infinity;
 
@@ -100,7 +89,6 @@ export default function Motorista() {
     return menor;
   }
 
-  // 🚨 IA DE DESVIO
   function verificarDesvio(lat: number, lng: number) {
     const dist = distanciaDaRota({ lat, lng }, rotaAtual);
 
@@ -112,7 +100,55 @@ export default function Motorista() {
     }
   }
 
-  // 💾 SALVAR JUSTIFICATIVA
+  // 🚀 INICIAR VIAGEM
+  function iniciarViagem() {
+    if (viagemAtiva) return;
+
+    setViagemAtiva(true);
+
+    const id = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const now = Date.now();
+
+        setPosicao({ lat, lng });
+
+        verificarDesvio(lat, lng);
+
+        // 🚍 posição atual
+        await set(ref(db, `onibus/${rotaSelecionada}`), {
+          lat,
+          lng,
+          atualizadoEm: now,
+          motoristaId: usuario?.uid,
+        });
+
+        // 📜 histórico (IA)
+        await set(ref(db, `historico/${rotaSelecionada}/${now}`), {
+          lat,
+          lng,
+          timestamp: now,
+        });
+      },
+      (err) => console.log(err),
+      { enableHighAccuracy: true }
+    );
+
+    setWatchId(id);
+  }
+
+  // 🛑 PARAR VIAGEM
+  function pararViagem() {
+    setViagemAtiva(false);
+
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
+    }
+  }
+
+  // 💾 JUSTIFICATIVA
   async function enviarJustificativa() {
     if (!justificativa) return;
 
@@ -120,8 +156,8 @@ export default function Motorista() {
       ref(db, `justificativas/${rotaSelecionada}/${Date.now()}`),
       {
         texto: justificativa,
-        motoristaId: "motorista_atual",
         posicao,
+        motoristaId: usuario?.uid,
         criadoEm: Date.now(),
       }
     );
@@ -136,14 +172,51 @@ export default function Motorista() {
 
       <h1>👨‍✈️ Motorista</h1>
 
-      {/* SELEÇÃO DE ROTA */}
+      <p>Logado: {usuario?.email}</p>
+
+      {/* ROTA */}
       <select
         value={rotaSelecionada}
-        onChange={(e) => setRotaSelecionada(e.target.value as Rota)}
+        onChange={(e) =>
+          setRotaSelecionada(e.target.value as Rota)
+        }
+        disabled={viagemAtiva}
       >
         <option value="aldeiaPark">Aldeia Park</option>
         <option value="buriti">Buriti</option>
       </select>
+
+      {/* BOTÕES */}
+      <div style={{ marginTop: 15, display: "flex", gap: 10 }}>
+
+        <button
+          onClick={iniciarViagem}
+          disabled={viagemAtiva}
+          style={{
+            padding: 12,
+            background: "green",
+            color: "white",
+            border: "none",
+            borderRadius: 8,
+          }}
+        >
+          ▶️ Iniciar viagem
+        </button>
+
+        <button
+          onClick={pararViagem}
+          disabled={!viagemAtiva}
+          style={{
+            padding: 12,
+            background: "red",
+            color: "white",
+            border: "none",
+            borderRadius: 8,
+          }}
+        >
+          ⏹️ Parar viagem
+        </button>
+      </div>
 
       {/* POSIÇÃO */}
       <div style={{
@@ -153,11 +226,10 @@ export default function Motorista() {
         color: "white",
         borderRadius: 10
       }}>
-        <p>📍 Lat: {posicao.lat}</p>
-        <p>📍 Lng: {posicao.lng}</p>
+        <p>📍 {posicao.lat.toFixed(6)} | {posicao.lng.toFixed(6)}</p>
       </div>
 
-      {/* 🚨 ALERTA DE DESVIO */}
+      {/* ALERTA */}
       {alerta && (
         <div style={{
           marginTop: 15,
@@ -168,16 +240,11 @@ export default function Motorista() {
         }}>
           <p>🚨 Você saiu da rota!</p>
 
-          <p>Justifique o motivo:</p>
-
           <textarea
             value={justificativa}
             onChange={(e) => setJustificativa(e.target.value)}
-            style={{
-              width: "100%",
-              height: 80,
-              marginTop: 10
-            }}
+            style={{ width: "100%", height: 80 }}
+            placeholder="Justifique o desvio..."
           />
 
           <button
@@ -187,8 +254,8 @@ export default function Motorista() {
               padding: 10,
               background: "black",
               color: "white",
-              border: "none",
-              borderRadius: 8
+              borderRadius: 8,
+              border: "none"
             }}
           >
             Enviar justificativa
