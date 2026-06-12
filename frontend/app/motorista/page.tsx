@@ -29,7 +29,7 @@ export default function Motorista() {
     return () => unsub();
   }, []);
 
-  // 📡 LISTA ROTAS EM TEMPO REAL
+  // 📡 ROTAS EM TEMPO REAL
   useEffect(() => {
     const rotasRef = ref(db, "viagens");
 
@@ -40,11 +40,10 @@ export default function Motorista() {
     return () => unsub();
   }, []);
 
-  // 🚀 INICIAR VIAGEM
+  // 🚀 INICIAR VIAGEM (COM HISTÓRICO)
   async function iniciarViagem(rota: Rota) {
     const atual = rotas?.[rota];
 
-    // 🚫 bloqueio de conflito
     if (atual?.status === "em_andamento") {
       alert("Essa rota já está em andamento");
       return;
@@ -57,18 +56,34 @@ export default function Motorista() {
       iniciadoEm: Date.now(),
     });
 
-    // 📍 GPS em tempo real por rota
+    // 📍 GPS + 📜 HISTÓRICO (AQUI ESTÁ A IA)
     const id = navigator.geolocation.watchPosition(
       async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const now = Date.now();
+
+        // 🚍 posição atual (tempo real)
         await set(ref(db, `onibus/${rota}`), {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          atualizadoEm: Date.now(),
+          lat,
+          lng,
+          atualizadoEm: now,
           motoristaId: usuario?.uid,
         });
+
+        // 📜 histórico (BASE DA IA)
+        await set(ref(db, `historico/${rota}/${now}`), {
+          lat,
+          lng,
+          timestamp: now,
+        });
       },
-      (err) => console.log(err),
-      { enableHighAccuracy: true }
+      (err) => console.log("GPS error:", err),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000,
+      }
     );
 
     setWatchId(id);
@@ -78,7 +93,6 @@ export default function Motorista() {
   async function pararViagem(rota: Rota) {
     const atual = rotas?.[rota];
 
-    // 🔒 só quem iniciou pode parar
     if (atual?.motoristaId !== usuario?.uid) {
       alert("Você não pode parar essa rota");
       return;
@@ -111,30 +125,26 @@ export default function Motorista() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f3f4f6",
+    <div style={{
+      minHeight: "100vh",
+      background: "#f3f4f6",
+      padding: 30,
+      fontFamily: "Arial",
+    }}>
+      <div style={{
+        maxWidth: 800,
+        margin: "0 auto",
+        background: "white",
         padding: 30,
-        fontFamily: "Arial",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 800,
-          margin: "0 auto",
-          background: "white",
-          padding: 30,
-          borderRadius: 20,
-        }}
-      >
+        borderRadius: 20,
+      }}>
         <h1>👨‍✈️ Área do Motorista</h1>
 
         <p>
           <strong>Logado:</strong> {usuario?.email}
         </p>
 
-        {/* 🔥 ROTAS */}
+        {/* ROTAS */}
         {(["aldeiaPark", "buriti"] as Rota[]).map((rota) => (
           <div
             key={rota}
@@ -155,8 +165,7 @@ export default function Motorista() {
             </p>
 
             <p>
-              Motorista:{" "}
-              {rotas?.[rota]?.motoristaEmail || "-"}
+              Motorista: {rotas?.[rota]?.motoristaEmail || "-"}
             </p>
 
             <div style={{ display: "flex", gap: 10 }}>
@@ -169,7 +178,6 @@ export default function Motorista() {
                   color: "white",
                   border: "none",
                   borderRadius: 10,
-                  cursor: "pointer",
                 }}
               >
                 ▶️ Iniciar
@@ -177,16 +185,13 @@ export default function Motorista() {
 
               <button
                 onClick={() => pararViagem(rota)}
-                disabled={
-                  rotas?.[rota]?.motoristaId !== usuario?.uid
-                }
+                disabled={rotas?.[rota]?.motoristaId !== usuario?.uid}
                 style={{
                   padding: 12,
                   background: "#ef4444",
                   color: "white",
                   border: "none",
                   borderRadius: 10,
-                  cursor: "pointer",
                 }}
               >
                 ⏹️ Parar
@@ -195,7 +200,7 @@ export default function Motorista() {
           </div>
         ))}
 
-        {/* 🚪 SAIR */}
+        {/* SAIR */}
         <div style={{ marginTop: 30 }}>
           <button
             onClick={sair}
