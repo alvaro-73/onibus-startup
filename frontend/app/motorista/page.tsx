@@ -3,182 +3,120 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  onAuthStateChanged,
-  signOut,
-} from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { ref, set, onValue, runTransaction } from "firebase/database";
 
-import {
-  ref,
-  set,
-  onValue,
-} from "firebase/database";
+import { auth, db } from "../firebase";
 
-import {
-  auth,
-  db,
-} from "../firebase";
+type Rota = "aldeiaPark" | "buriti";
 
 export default function Motorista() {
   const router = useRouter();
 
-  const [usuario, setUsuario] =
-    useState<any>(null);
+  const [usuario, setUsuario] = useState<any>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
 
-  const [loadingAuth, setLoadingAuth] =
-    useState(true);
-
-  const [iniciado, setIniciado] =
-    useState(false);
-
-  const [motoristaAtivo, setMotoristaAtivo] =
-    useState("");
-
-  const [watchId, setWatchId] =
-    useState<number | null>(null);
+  const [rotas, setRotas] = useState<any>({});
+  const [watchId, setWatchId] = useState<number | null>(null);
 
   useEffect(() => {
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        (user) => {
-          setUsuario(user);
-          setLoadingAuth(false);
-        }
-      );
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUsuario(user);
+      setLoadingAuth(false);
+    });
 
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    const viagemRef =
-      ref(db, "viagem");
+    const rotasRef = ref(db, "rotas");
 
-    const unsubscribe =
-      onValue(
-        viagemRef,
-        (snapshot) => {
-          const data =
-            snapshot.val();
-
-          if (data?.ativa) {
-            setIniciado(true);
-
-            setMotoristaAtivo(
-              data.motorista || ""
-            );
-          } else {
-            setIniciado(false);
-
-            setMotoristaAtivo("");
-          }
-        }
-      );
+    const unsubscribe = onValue(rotasRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setRotas(data);
+    });
 
     return () => unsubscribe();
   }, []);
 
-  async function iniciarViagem() {
-    if (iniciado) return;
+  // 🔥 INICIAR ROTA COM TRAVA (LOCK)
+  async function iniciarViagem(rota: Rota) {
+    if (!usuario) return;
+
+    const rotaRef = ref(db, `rotas/${rota}`);
 
     try {
-      await set(
-        ref(db, "viagem"),
-        {
-          ativa: true,
-
-          motorista:
-            usuario?.email ||
-            "Motorista",
-
-          iniciadoEm:
-            Date.now(),
+      await runTransaction(db, async (currentData) => {
+        if (currentData?.val()?.status === "em_andamento") {
+          throw new Error("Rota já está em andamento");
         }
+
+        return {
+          status: "em_andamento",
+          motoristaId: usuario.uid,
+          motoristaEmail: usuario.email,
+          iniciadoEm: Date.now(),
+        };
+      }, rotaRef);
+
+      // GPS tracking
+      const id = navigator.geolocation.watchPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+
+          await set(ref(db, `onibus/${rota}`), {
+            lat,
+            lng,
+            atualizadoEm: Date.now(),
+            motoristaId: usuario.uid,
+          });
+        },
+        (error) => console.log(error),
+        { enableHighAccuracy: true }
       );
 
-      const id =
-        navigator.geolocation.watchPosition(
-          async (
-            position
-          ) => {
-            const lat =
-              position.coords
-                .latitude;
-
-            const lng =
-              position.coords
-                .longitude;
-
-            await set(
-              ref(db, "onibus"),
-              {
-                lat,
-                lng,
-                atualizadoEm:
-                  Date.now(),
-              }
-            );
-          },
-          (error) => {
-            console.log(
-              error
-            );
-          },
-          {
-            enableHighAccuracy:
-              true,
-          }
-        );
-
       setWatchId(id);
-    } catch (error) {
-      console.log(error);
+    } catch (error: any) {
+      alert(error.message || "Erro ao iniciar viagem");
     }
   }
 
-  async function pararViagem() {
-    try {
-      if (
-        watchId !== null
-      ) {
-        navigator.geolocation.clearWatch(
-          watchId
-        );
-      }
+  // 🛑 FINALIZAR ROTA (SÓ QUEM INICIOU)
+  async function pararViagem(rota: Rota) {
+    const rotaRef = ref(db, `rotas/${rota}`);
 
-      await set(
-        ref(db, "viagem"),
-        {
-          ativa: false,
+    const data = rotas?.[rota];
 
-          motorista: "",
+    if (!data) return;
 
-          iniciadoEm: null,
-        }
-      );
-
-      setWatchId(null);
-    } catch (error) {
-      console.log(error);
+    if (data.motoristaId !== usuario?.uid) {
+      alert("Você não pode parar essa rota");
+      return;
     }
+
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
+    }
+
+    await set(rotaRef, {
+      status: "livre",
+      motoristaId: null,
+      motoristaEmail: null,
+      iniciadoEm: null,
+    });
   }
 
   async function sair() {
     await signOut(auth);
-
     router.push("/");
   }
 
   if (loadingAuth) {
     return (
-      <div
-        style={{
-          padding: 40,
-        }}
-      >
-        <h2>
-          Carregando...
-        </h2>
+      <div style={{ padding: 40 }}>
+        <h2>Carregando...</h2>
       </div>
     );
   }
@@ -186,214 +124,157 @@ export default function Motorista() {
   return (
     <div
       style={{
-        minHeight:
-          "100vh",
-
-        background:
-          "#f3f4f6",
-
+        minHeight: "100vh",
+        background: "#f3f4f6",
         padding: 30,
-
-        fontFamily:
-          "Arial",
+        fontFamily: "Arial",
       }}
     >
       <div
         style={{
-          maxWidth: 700,
-
-          margin:
-            "0 auto",
-
-          background:
-            "white",
-
+          maxWidth: 800,
+          margin: "0 auto",
+          background: "white",
           padding: 30,
-
-          borderRadius:
-            20,
-
-          boxShadow:
-            "0 10px 30px rgba(0,0,0,0.1)",
+          borderRadius: 20,
         }}
       >
-        <h1
-          style={{
-            marginTop: 0,
-          }}
-        >
-          👨‍✈️ Área do
-          Motorista
-        </h1>
+        <h1>👨‍✈️ Área do Motorista</h1>
 
         <p>
-          <strong>
-            Logado:
-          </strong>{" "}
-          {
-            usuario?.email
-          }
+          <strong>Logado:</strong> {usuario?.email}
         </p>
 
-        <div
-          style={{
-            marginTop: 20,
+        {/* 🚍 ROTAS */}
+        <div style={{ marginTop: 30 }}>
+          <h2>Rotas disponíveis</h2>
 
-            marginBottom:
-              20,
-
-            padding: 15,
-
-            borderRadius:
-              12,
-
-            background:
-              iniciado
-                ? "#dcfce7"
-                : "#fee2e2",
-          }}
-        >
-          <strong>
-            Status:{" "}
-            {iniciado
-              ? "🟢 Viagem em andamento"
-              : "🔴 Viagem parada"}
-          </strong>
-        </div>
-
-        {iniciado && (
+          {/* ALDEIA PARK */}
           <div
             style={{
-              marginBottom:
-                25,
-
-              color:
-                "#166534",
-
-              fontWeight:
-                "bold",
+              padding: 15,
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              marginBottom: 15,
             }}
           >
-            Motorista ativo:
-            {" "}
-            {
-              motoristaAtivo
-            }
+            <h3>🚌 Aldeia Park</h3>
+
+            <p>
+              Status:{" "}
+              {rotas?.aldeiaPark?.status === "em_andamento"
+                ? "🔴 Em andamento"
+                : "🟢 Livre"}
+            </p>
+
+            {rotas?.aldeiaPark?.motoristaEmail && (
+              <p>
+                Motorista: {rotas.aldeiaPark.motoristaEmail}
+              </p>
+            )}
+
+            <button
+              onClick={() => iniciarViagem("aldeiaPark")}
+              disabled={rotas?.aldeiaPark?.status === "em_andamento"}
+              style={{
+                padding: 12,
+                marginRight: 10,
+                background: "#22c55e",
+                color: "white",
+                border: "none",
+                borderRadius: 10,
+                cursor: "pointer",
+              }}
+            >
+              Iniciar
+            </button>
+
+            <button
+              onClick={() => pararViagem("aldeiaPark")}
+              disabled={
+                rotas?.aldeiaPark?.motoristaId !== usuario?.uid
+              }
+              style={{
+                padding: 12,
+                background: "#ef4444",
+                color: "white",
+                border: "none",
+                borderRadius: 10,
+                cursor: "pointer",
+              }}
+            >
+              Parar
+            </button>
           </div>
-        )}
 
-        <div
-          style={{
-            display:
-              "flex",
-
-            gap: 15,
-
-            flexWrap:
-              "wrap",
-          }}
-        >
-          <button
-            onClick={
-              iniciarViagem
-            }
-            disabled={
-              iniciado
-            }
+          {/* BURITI */}
+          <div
             style={{
-              padding:
-                "16px 24px",
-
-              fontSize: 18,
-
-              border:
-                "none",
-
-              borderRadius:
-                12,
-
-              background:
-                iniciado
-                  ? "#9ca3af"
-                  : "#22c55e",
-
-              color:
-                "white",
-
-              cursor:
-                iniciado
-                  ? "not-allowed"
-                  : "pointer",
+              padding: 15,
+              border: "1px solid #ddd",
+              borderRadius: 12,
             }}
           >
-            ▶️ Iniciar
-            viagem
-          </button>
+            <h3>🚌 Buriti</h3>
 
+            <p>
+              Status:{" "}
+              {rotas?.buriti?.status === "em_andamento"
+                ? "🔴 Em andamento"
+                : "🟢 Livre"}
+            </p>
+
+            {rotas?.buriti?.motoristaEmail && (
+              <p>
+                Motorista: {rotas.buriti.motoristaEmail}
+              </p>
+            )}
+
+            <button
+              onClick={() => iniciarViagem("buriti")}
+              disabled={rotas?.buriti?.status === "em_andamento"}
+              style={{
+                padding: 12,
+                marginRight: 10,
+                background: "#22c55e",
+                color: "white",
+                border: "none",
+                borderRadius: 10,
+                cursor: "pointer",
+              }}
+            >
+              Iniciar
+            </button>
+
+            <button
+              onClick={() => pararViagem("buriti")}
+              disabled={
+                rotas?.buriti?.motoristaId !== usuario?.uid
+              }
+              style={{
+                padding: 12,
+                background: "#ef4444",
+                color: "white",
+                border: "none",
+                borderRadius: 10,
+                cursor: "pointer",
+              }}
+            >
+              Parar
+            </button>
+          </div>
+        </div>
+
+        {/* SAIR */}
+        <div style={{ marginTop: 30 }}>
           <button
-            onClick={
-              pararViagem
-            }
-            disabled={
-              !iniciado
-            }
+            onClick={sair}
             style={{
-              padding:
-                "16px 24px",
-
-              fontSize: 18,
-
-              border:
-                "none",
-
-              borderRadius:
-                12,
-
-              background:
-                "#ef4444",
-
-              color:
-                "white",
-
-              opacity:
-                iniciado
-                  ? 1
-                  : 0.5,
-
-              cursor:
-                iniciado
-                  ? "pointer"
-                  : "not-allowed",
-            }}
-          >
-            ⏹️ Parar
-            viagem
-          </button>
-
-          <button
-            onClick={
-              sair
-            }
-            style={{
-              padding:
-                "16px 24px",
-
-              fontSize: 18,
-
-              border:
-                "none",
-
-              borderRadius:
-                12,
-
-              background:
-                "#2563eb",
-
-              color:
-                "white",
-
-              cursor:
-                "pointer",
+              padding: 12,
+              background: "#2563eb",
+              color: "white",
+              border: "none",
+              borderRadius: 10,
             }}
           >
             🚪 Sair
