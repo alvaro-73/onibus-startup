@@ -31,7 +31,7 @@ const paradasAldeiaPark = [
   { nome: "Liceu", coords: [-4.1685, -38.4630] as [number, number] },
 ];
 
-// 🟩 BURITI (NOVAS PARADAS)
+// 🟩 BURITI
 const paradasBuriti = [
   { nome: "Madeireira Roma", coords: [-4.176983918564992, -38.481591544426514] as [number, number] },
   { nome: "Marina", coords: [-4.175500619426942, -38.47292743842063] as [number, number] },
@@ -49,20 +49,24 @@ export default function Home() {
   const [origemAtual, setOrigemAtual] =
     useState<[number, number]>(origemPadrao);
 
-  // 🚍 localização do ônibus
+  // 🚍 ESCUTA APENAS ROTA ATIVA (CORRIGIDO)
   useEffect(() => {
-    const onibusRef = ref(db, "onibus");
+    const rota = bairro === "Buriti" ? "buriti" : "aldeiaPark";
 
-    return onValue(onibusRef, (snapshot) => {
+    const onibusRef = ref(db, `onibus/${rota}`);
+
+    const unsub = onValue(onibusRef, (snapshot) => {
       const data = snapshot.val();
 
       if (data?.lat && data?.lng) {
         setOrigemAtual([data.lat, data.lng]);
       }
     });
-  }, []);
 
-  // 📍 escolhe rota por bairro
+    return () => unsub();
+  }, [bairro]);
+
+  // 📍 cálculo de rota
   useEffect(() => {
     const rota = bairro === "Buriti"
       ? paradasBuriti
@@ -144,6 +148,7 @@ export default function Home() {
 
   return (
     <div style={{ fontFamily: "Arial", minHeight: "100vh", background: "#eef4ff" }}>
+      
       <header style={{
         background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
         color: "white",
@@ -155,7 +160,7 @@ export default function Home() {
 
       <main style={{ maxWidth: 900, margin: "0 auto", padding: 20 }}>
 
-        {/* SELECT BAIRRO */}
+        {/* SELECT */}
         <div style={{ background: "white", padding: 20, borderRadius: 16 }}>
           <label><b>Bairro</b></label>
 
@@ -169,7 +174,7 @@ export default function Home() {
           </select>
         </div>
 
-        {/* LISTA DE PARADAS */}
+        {/* PARADAS */}
         <div style={{ marginTop: 20 }}>
           {carregando ? (
             <p>⏳ Calculando rota...</p>
@@ -189,7 +194,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* BOTÃO MAPA (AGORA PARA OS DOIS BAIRROS) */}
+        {/* MAPA */}
         <button
           onClick={() => setMostrarMapa(!mostrarMapa)}
           style={{
@@ -205,7 +210,6 @@ export default function Home() {
           {mostrarMapa ? "Fechar mapa" : "Ver mapa em tempo real"}
         </button>
 
-        {/* MAPA (AGORA FUNCIONA NOS DOIS BAIRROS) */}
         {mostrarMapa && (
           <div style={{ marginTop: 20 }}>
             <MapComponent
