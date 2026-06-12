@@ -22,7 +22,7 @@ const origemPadrao: [number, number] = [
   -38.459371465206424,
 ];
 
-// 🟦 ALDEIA PARK
+// 🟦 ROTAS
 const paradasAldeiaPark = [
   { nome: "Smartfit", coords: [-4.1816, -38.4593] as [number, number] },
   { nome: "Sabor Divino", coords: [-4.1803, -38.4594] as [number, number] },
@@ -31,7 +31,6 @@ const paradasAldeiaPark = [
   { nome: "Liceu", coords: [-4.1685, -38.4630] as [number, number] },
 ];
 
-// 🟩 BURITI
 const paradasBuriti = [
   { nome: "Madeireira Roma", coords: [-4.176983918564992, -38.481591544426514] as [number, number] },
   { nome: "Marina", coords: [-4.175500619426942, -38.47292743842063] as [number, number] },
@@ -49,28 +48,98 @@ export default function Home() {
   const [origemAtual, setOrigemAtual] =
     useState<[number, number]>(origemPadrao);
 
-  // 🚍 ESCUTA APENAS ROTA ATIVA (CORRIGIDO)
+  // 🧠 IA STATE
+  const [historico, setHistorico] = useState<any[]>([]);
+  const [eta, setEta] = useState<number | null>(null);
+
+  // 🚍 ESCUTA ONIBUS EM TEMPO REAL
   useEffect(() => {
     const rota = bairro === "Buriti" ? "buriti" : "aldeiaPark";
 
     const onibusRef = ref(db, `onibus/${rota}`);
+    const histRef = ref(db, `historico/${rota}`);
 
-    const unsub = onValue(onibusRef, (snapshot) => {
-      const data = snapshot.val();
+    const unsub1 = onValue(onibusRef, (snap) => {
+      const data = snap.val();
 
       if (data?.lat && data?.lng) {
         setOrigemAtual([data.lat, data.lng]);
       }
     });
 
-    return () => unsub();
+    const unsub2 = onValue(histRef, (snap) => {
+      const data = snap.val() || {};
+      setHistorico(Object.values(data));
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [bairro]);
 
-  // 📍 cálculo de rota
+  // 🧠 FUNÇÃO IA (ETA SIMPLES REAL)
+  function calcularETA(lista: any[], destino: [number, number]) {
+    if (!lista || lista.length < 2) return null;
+
+    const ultimo = lista[lista.length - 1];
+    const anterior = lista[lista.length - 2];
+
+    const toRad = (v: number) => (v * Math.PI) / 180;
+
+    function distancia(a: any, b: any) {
+      const R = 6371;
+      const dLat = toRad(b.lat - a.lat);
+      const dLng = toRad(b.lng - a.lng);
+
+      const x =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(a.lat)) *
+          Math.cos(toRad(b.lat)) *
+          Math.sin(dLng / 2) ** 2;
+
+      return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    }
+
+    const distPercorrida = distancia(anterior, ultimo);
+
+    const tempoMs = ultimo.timestamp - anterior.timestamp;
+    const horas = tempoMs / 3600000;
+
+    const velocidade = distPercorrida / (horas || 0.0001);
+
+    const distDestino = distancia(ultimo, {
+      lat: destino[0],
+      lng: destino[1],
+    });
+
+    const etaHoras = distDestino / (velocidade || 1);
+
+    return Math.max(Math.round(etaHoras * 60), 1);
+  }
+
+  // 🧠 ATUALIZA ETA AUTOMATICAMENTE
   useEffect(() => {
-    const rota = bairro === "Buriti"
-      ? paradasBuriti
-      : paradasAldeiaPark;
+    if (!historico.length) return;
+
+    const rota =
+      bairro === "Buriti"
+        ? paradasBuriti
+        : paradasAldeiaPark;
+
+    const destino = rota[rota.length - 1].coords;
+
+    const tempo = calcularETA(historico, destino);
+
+    setEta(tempo);
+  }, [historico, bairro]);
+
+  // 📍 ROTAS
+  useEffect(() => {
+    const rota =
+      bairro === "Buriti"
+        ? paradasBuriti
+        : paradasAldeiaPark;
 
     async function calcular() {
       setCarregando(true);
@@ -84,7 +153,6 @@ export default function Home() {
       const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
 
       if (!apiKey) {
-        console.error("Sem API KEY");
         setCarregando(false);
         return;
       }
@@ -155,7 +223,7 @@ export default function Home() {
         padding: 25
       }}>
         <h1>🚌 Transporte Escolar</h1>
-        <p>Rastreamento em tempo real</p>
+        <p>Rastreamento em tempo real + IA de chegada</p>
       </header>
 
       <main style={{ maxWidth: 900, margin: "0 auto", padding: 20 }}>
@@ -172,6 +240,23 @@ export default function Home() {
             <option>Aldeia Park</option>
             <option>Buriti</option>
           </select>
+        </div>
+
+        {/* 🧠 IA ETA */}
+        <div style={{
+          marginTop: 15,
+          background: "#0f172a",
+          color: "white",
+          padding: 15,
+          borderRadius: 12
+        }}>
+          <h3>🧠 IA de Previsão</h3>
+
+          {eta ? (
+            <p>🚌 Chegada estimada: <b>{eta} min</b></p>
+          ) : (
+            <p>Calculando previsão...</p>
+          )}
         </div>
 
         {/* PARADAS */}
