@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { ref, set, onValue, runTransaction } from "firebase/database";
+import { ref, set, onValue } from "firebase/database";
 
 import { auth, db } from "../firebase";
 
@@ -19,78 +19,67 @@ export default function Motorista() {
   const [rotas, setRotas] = useState<any>({});
   const [watchId, setWatchId] = useState<number | null>(null);
 
+  // 🔐 AUTH
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
       setUsuario(user);
       setLoadingAuth(false);
     });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
+  // 📡 LISTA ROTAS EM TEMPO REAL
   useEffect(() => {
-    const rotasRef = ref(db, "rotas");
+    const rotasRef = ref(db, "viagens");
 
-    const unsubscribe = onValue(rotasRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      setRotas(data);
+    const unsub = onValue(rotasRef, (snapshot) => {
+      setRotas(snapshot.val() || {});
     });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  // 🔥 INICIAR ROTA COM TRAVA (LOCK)
+  // 🚀 INICIAR VIAGEM
   async function iniciarViagem(rota: Rota) {
-    if (!usuario) return;
+    const atual = rotas?.[rota];
 
-    const rotaRef = ref(db, `rotas/${rota}`);
-
-    try {
-      await runTransaction(db, async (currentData) => {
-        if (currentData?.val()?.status === "em_andamento") {
-          throw new Error("Rota já está em andamento");
-        }
-
-        return {
-          status: "em_andamento",
-          motoristaId: usuario.uid,
-          motoristaEmail: usuario.email,
-          iniciadoEm: Date.now(),
-        };
-      }, rotaRef);
-
-      // GPS tracking
-      const id = navigator.geolocation.watchPosition(
-        async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-
-          await set(ref(db, `onibus/${rota}`), {
-            lat,
-            lng,
-            atualizadoEm: Date.now(),
-            motoristaId: usuario.uid,
-          });
-        },
-        (error) => console.log(error),
-        { enableHighAccuracy: true }
-      );
-
-      setWatchId(id);
-    } catch (error: any) {
-      alert(error.message || "Erro ao iniciar viagem");
+    // 🚫 bloqueio de conflito
+    if (atual?.status === "em_andamento") {
+      alert("Essa rota já está em andamento");
+      return;
     }
+
+    await set(ref(db, `viagens/${rota}`), {
+      status: "em_andamento",
+      motoristaId: usuario?.uid,
+      motoristaEmail: usuario?.email,
+      iniciadoEm: Date.now(),
+    });
+
+    // 📍 GPS em tempo real por rota
+    const id = navigator.geolocation.watchPosition(
+      async (pos) => {
+        await set(ref(db, `onibus/${rota}`), {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          atualizadoEm: Date.now(),
+          motoristaId: usuario?.uid,
+        });
+      },
+      (err) => console.log(err),
+      { enableHighAccuracy: true }
+    );
+
+    setWatchId(id);
   }
 
-  // 🛑 FINALIZAR ROTA (SÓ QUEM INICIOU)
+  // 🛑 PARAR VIAGEM
   async function pararViagem(rota: Rota) {
-    const rotaRef = ref(db, `rotas/${rota}`);
+    const atual = rotas?.[rota];
 
-    const data = rotas?.[rota];
-
-    if (!data) return;
-
-    if (data.motoristaId !== usuario?.uid) {
+    // 🔒 só quem iniciou pode parar
+    if (atual?.motoristaId !== usuario?.uid) {
       alert("Você não pode parar essa rota");
       return;
     }
@@ -100,7 +89,7 @@ export default function Motorista() {
       setWatchId(null);
     }
 
-    await set(rotaRef, {
+    await set(ref(db, `viagens/${rota}`), {
       status: "livre",
       motoristaId: null,
       motoristaEmail: null,
@@ -145,127 +134,68 @@ export default function Motorista() {
           <strong>Logado:</strong> {usuario?.email}
         </p>
 
-        {/* 🚍 ROTAS */}
-        <div style={{ marginTop: 30 }}>
-          <h2>Rotas disponíveis</h2>
-
-          {/* ALDEIA PARK */}
+        {/* 🔥 ROTAS */}
+        {(["aldeiaPark", "buriti"] as Rota[]).map((rota) => (
           <div
+            key={rota}
             style={{
-              padding: 15,
               border: "1px solid #ddd",
               borderRadius: 12,
-              marginBottom: 15,
+              padding: 15,
+              marginTop: 20,
             }}
           >
-            <h3>🚌 Aldeia Park</h3>
+            <h3>🚌 {rota}</h3>
 
             <p>
               Status:{" "}
-              {rotas?.aldeiaPark?.status === "em_andamento"
+              {rotas?.[rota]?.status === "em_andamento"
                 ? "🔴 Em andamento"
                 : "🟢 Livre"}
             </p>
 
-            {rotas?.aldeiaPark?.motoristaEmail && (
-              <p>
-                Motorista: {rotas.aldeiaPark.motoristaEmail}
-              </p>
-            )}
-
-            <button
-              onClick={() => iniciarViagem("aldeiaPark")}
-              disabled={rotas?.aldeiaPark?.status === "em_andamento"}
-              style={{
-                padding: 12,
-                marginRight: 10,
-                background: "#22c55e",
-                color: "white",
-                border: "none",
-                borderRadius: 10,
-                cursor: "pointer",
-              }}
-            >
-              Iniciar
-            </button>
-
-            <button
-              onClick={() => pararViagem("aldeiaPark")}
-              disabled={
-                rotas?.aldeiaPark?.motoristaId !== usuario?.uid
-              }
-              style={{
-                padding: 12,
-                background: "#ef4444",
-                color: "white",
-                border: "none",
-                borderRadius: 10,
-                cursor: "pointer",
-              }}
-            >
-              Parar
-            </button>
-          </div>
-
-          {/* BURITI */}
-          <div
-            style={{
-              padding: 15,
-              border: "1px solid #ddd",
-              borderRadius: 12,
-            }}
-          >
-            <h3>🚌 Buriti</h3>
-
             <p>
-              Status:{" "}
-              {rotas?.buriti?.status === "em_andamento"
-                ? "🔴 Em andamento"
-                : "🟢 Livre"}
+              Motorista:{" "}
+              {rotas?.[rota]?.motoristaEmail || "-"}
             </p>
 
-            {rotas?.buriti?.motoristaEmail && (
-              <p>
-                Motorista: {rotas.buriti.motoristaEmail}
-              </p>
-            )}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => iniciarViagem(rota)}
+                disabled={rotas?.[rota]?.status === "em_andamento"}
+                style={{
+                  padding: 12,
+                  background: "#22c55e",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                }}
+              >
+                ▶️ Iniciar
+              </button>
 
-            <button
-              onClick={() => iniciarViagem("buriti")}
-              disabled={rotas?.buriti?.status === "em_andamento"}
-              style={{
-                padding: 12,
-                marginRight: 10,
-                background: "#22c55e",
-                color: "white",
-                border: "none",
-                borderRadius: 10,
-                cursor: "pointer",
-              }}
-            >
-              Iniciar
-            </button>
-
-            <button
-              onClick={() => pararViagem("buriti")}
-              disabled={
-                rotas?.buriti?.motoristaId !== usuario?.uid
-              }
-              style={{
-                padding: 12,
-                background: "#ef4444",
-                color: "white",
-                border: "none",
-                borderRadius: 10,
-                cursor: "pointer",
-              }}
-            >
-              Parar
-            </button>
+              <button
+                onClick={() => pararViagem(rota)}
+                disabled={
+                  rotas?.[rota]?.motoristaId !== usuario?.uid
+                }
+                style={{
+                  padding: 12,
+                  background: "#ef4444",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                }}
+              >
+                ⏹️ Parar
+              </button>
+            </div>
           </div>
-        </div>
+        ))}
 
-        {/* SAIR */}
+        {/* 🚪 SAIR */}
         <div style={{ marginTop: 30 }}>
           <button
             onClick={sair}
@@ -277,7 +207,7 @@ export default function Motorista() {
               borderRadius: 10,
             }}
           >
-            🚪 Sair
+            Sair
           </button>
         </div>
       </div>
