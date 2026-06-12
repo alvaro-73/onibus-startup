@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set, onValue } from "firebase/database";
-
 import { auth, db } from "../firebase";
 
 type Rota = "aldeiaPark" | "buriti";
@@ -40,7 +38,7 @@ export default function Motorista() {
     return () => unsub();
   }, []);
 
-  // 🚀 INICIAR VIAGEM (COM HISTÓRICO)
+  // 🚀 INICIAR VIAGEM
   async function iniciarViagem(rota: Rota) {
     const atual = rotas?.[rota];
 
@@ -55,36 +53,37 @@ export default function Motorista() {
       motoristaEmail: usuario?.email,
       iniciadoEm: Date.now(),
     });
-navigator.geolocation.watchPosition(
-  async (pos) => {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-    const now = Date.now();
 
-    console.log("🚍 GPS RODANDO:", lat, lng);
+    // 📍 GPS EM TEMPO REAL + HISTÓRICO (CORRIGIDO)
+    const watchIdLocal = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const now = Date.now();
 
-    // 🔥 TESTE 1: onibus
-    await set(ref(db, `onibus/aldeiaPark`), {
-      lat,
-      lng,
-      atualizadoEm: now,
-    });
+        const rotaRef = `onibus/${rota}`;
 
-    // 🔥 TESTE 2: histórico FORÇADO
-    await set(ref(db, `historico/aldeiaPark/teste`), {
-      lat,
-      lng,
-      timestamp: now,
-    });
+        // 🚍 posição atual
+        await set(ref(db, rotaRef), {
+          lat,
+          lng,
+          atualizadoEm: now,
+          motoristaId: usuario?.uid,
+        });
 
-    console.log("📜 HISTÓRICO ENVIADO");
-  },
-  (err) => {
-    console.log("❌ GPS ERROR:", err);
-  },
-  { enableHighAccuracy: true }
-);
-    setWatchId(id);
+        // 📜 histórico (IA usa isso)
+        await set(ref(db, `historico/${rota}/${now}`), {
+          lat,
+          lng,
+          timestamp: now,
+        });
+      },
+      (err) => console.log("GPS erro:", err),
+      { enableHighAccuracy: true }
+    );
+
+    // ⚠️ IMPORTANTE: agora está definido corretamente
+    setWatchId(watchIdLocal);
   }
 
   // 🛑 PARAR VIAGEM
@@ -127,32 +126,27 @@ navigator.geolocation.watchPosition(
       minHeight: "100vh",
       background: "#f3f4f6",
       padding: 30,
-      fontFamily: "Arial",
+      fontFamily: "Arial"
     }}>
       <div style={{
         maxWidth: 800,
         margin: "0 auto",
         background: "white",
         padding: 30,
-        borderRadius: 20,
+        borderRadius: 20
       }}>
         <h1>👨‍✈️ Área do Motorista</h1>
 
-        <p>
-          <strong>Logado:</strong> {usuario?.email}
-        </p>
+        <p><strong>Logado:</strong> {usuario?.email}</p>
 
-        {/* ROTAS */}
+        {/* 🚍 ROTAS */}
         {(["aldeiaPark", "buriti"] as Rota[]).map((rota) => (
-          <div
-            key={rota}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 15,
-              marginTop: 20,
-            }}
-          >
+          <div key={rota} style={{
+            border: "1px solid #ddd",
+            borderRadius: 12,
+            padding: 15,
+            marginTop: 20
+          }}>
             <h3>🚌 {rota}</h3>
 
             <p>
@@ -175,7 +169,7 @@ navigator.geolocation.watchPosition(
                   background: "#22c55e",
                   color: "white",
                   border: "none",
-                  borderRadius: 10,
+                  borderRadius: 10
                 }}
               >
                 ▶️ Iniciar
@@ -189,7 +183,7 @@ navigator.geolocation.watchPosition(
                   background: "#ef4444",
                   color: "white",
                   border: "none",
-                  borderRadius: 10,
+                  borderRadius: 10
                 }}
               >
                 ⏹️ Parar
@@ -198,7 +192,7 @@ navigator.geolocation.watchPosition(
           </div>
         ))}
 
-        {/* SAIR */}
+        {/* 🚪 SAIR */}
         <div style={{ marginTop: 30 }}>
           <button
             onClick={sair}
@@ -207,7 +201,7 @@ navigator.geolocation.watchPosition(
               background: "#2563eb",
               color: "white",
               border: "none",
-              borderRadius: 10,
+              borderRadius: 10
             }}
           >
             Sair
