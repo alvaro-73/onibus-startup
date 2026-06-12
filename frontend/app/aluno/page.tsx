@@ -32,27 +32,26 @@ const paradasAldeiaPark = [
 ];
 
 const paradasBuriti = [
-  { nome: "Madeireira Roma", coords: [-4.176983918564992, -38.481591544426514] as [number, number] },
-  { nome: "Marina", coords: [-4.175500619426942, -38.47292743842063] as [number, number] },
-  { nome: "MCR Lubrificantes", coords: [-4.176903072507907, -38.478556766483585] as [number, number] },
-  { nome: "Municipal", coords: [-4.175214072946176, -38.46862240569411] as [number, number] },
+  { nome: "Madeireira Roma", coords: [-4.1769839, -38.4815915] as [number, number] },
+  { nome: "Marina", coords: [-4.1755006, -38.4729274] as [number, number] },
+  { nome: "MCR Lubrificantes", coords: [-4.1769030, -38.4785567] as [number, number] },
+  { nome: "Municipal", coords: [-4.1752140, -38.4686224] as [number, number] },
   { nome: "Liceu", coords: [-4.1685, -38.4630] as [number, number] },
 ];
 
 export default function Home() {
   const [bairro, setBairro] = useState("Aldeia Park");
   const [paradas, setParadas] = useState<Parada[]>([]);
-  const [carregando, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(false);
   const [mostrarMapa, setMostrarMapa] = useState(false);
 
   const [origemAtual, setOrigemAtual] =
     useState<[number, number]>(origemPadrao);
 
-  // 🧠 IA STATE
   const [historico, setHistorico] = useState<any[]>([]);
   const [eta, setEta] = useState<number | null>(null);
 
-  // 🚍 ONIBUS EM TEMPO REAL (CORRIGIDO)
+  // 🚍 FIREBASE AO VIVO
   useEffect(() => {
     const rota = bairro === "Buriti" ? "buriti" : "aldeiaPark";
 
@@ -75,9 +74,17 @@ export default function Home() {
         return;
       }
 
-      // 🔥 CORREÇÃO IMPORTANTE
-      const lista = Object.values(data).filter(Boolean);
+      const lista = Object.values(data)
+        .filter((p: any) =>
+          p?.lat &&
+          p?.lng &&
+          typeof p.timestamp === "number"
+        );
+
       setHistorico(lista);
+
+      // 🔍 DEBUG IMPORTANTE
+      console.log("HISTÓRICO:", lista);
     });
 
     return () => {
@@ -86,12 +93,14 @@ export default function Home() {
     };
   }, [bairro]);
 
-  // 🧠 IA DE ETA (CORRIGIDA)
+  // 🧠 ETA ULTRA ESTÁVEL
   function calcularETA(lista: any[], destino: [number, number]) {
     if (!lista || lista.length < 2) return null;
 
     const ultimo = lista[lista.length - 1];
     const anterior = lista[lista.length - 2];
+
+    if (!ultimo?.lat || !anterior?.lat) return null;
 
     const toRad = (v: number) => (v * Math.PI) / 180;
 
@@ -112,26 +121,28 @@ export default function Home() {
 
     const distPercorrida = distancia(anterior, ultimo);
 
-    const tempoMs = ultimo.timestamp - anterior.timestamp;
-    const horas = tempoMs / 3600000;
+    const tempoMs = (ultimo.timestamp || 0) - (anterior.timestamp || 0);
 
-    // 🔥 EVITA BUG
+    const horas = tempoMs > 0 ? tempoMs / 3600000 : 0;
+
     const velocidade =
-      horas > 0 ? distPercorrida / horas : 30;
+      horas > 0 ? distPercorrida / horas : 25; // fallback ônibus
 
     const distDestino = distancia(ultimo, {
       lat: destino[0],
       lng: destino[1],
     });
 
-    const etaHoras = distDestino / (velocidade || 30);
+    const etaHoras = distDestino / velocidade;
 
-    return Math.max(Math.round(etaHoras * 60), 1);
+    const resultado = Math.max(Math.round(etaHoras * 60), 1);
+
+    return isNaN(resultado) ? null : resultado;
   }
 
-  // 🧠 ATUALIZA ETA (CORRIGIDO)
+  // 🧠 ATUALIZA ETA SEM TRAVAR
   useEffect(() => {
-    if (!historico || historico.length < 2) {
+    if (historico.length < 2) {
       setEta(null);
       return;
     }
@@ -145,14 +156,10 @@ export default function Home() {
 
     const tempo = calcularETA(historico, destino);
 
-    if (tempo && !isNaN(tempo)) {
-      setEta(tempo);
-    } else {
-      setEta(null);
-    }
+    setEta(tempo);
   }, [historico, bairro]);
 
-  // 📍 ROTAS (ORIGINAL)
+  // 📍 ROTA (ORIGINAL)
   useEffect(() => {
     const rota =
       bairro === "Buriti"
@@ -170,10 +177,7 @@ export default function Home() {
 
       const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
 
-      if (!apiKey) {
-        setCarregando(false);
-        return;
-      }
+      if (!apiKey) return;
 
       try {
         for (const parada of rota) {
@@ -196,7 +200,7 @@ export default function Home() {
 
           const data = await response.json();
 
-          if (!response.ok || !data?.features?.length) continue;
+          if (!data?.features?.length) continue;
 
           const summary = data.features[0].properties.summary;
 
@@ -218,7 +222,7 @@ export default function Home() {
 
         setParadas(resultados);
       } catch (err) {
-        console.error(err);
+        console.log(err);
       }
 
       setCarregando(false);
@@ -233,96 +237,40 @@ export default function Home() {
       : paradasAldeiaPark;
 
   return (
-    <div style={{ fontFamily: "Arial", minHeight: "100vh", background: "#eef4ff" }}>
-      
-      <header style={{
-        background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
-        color: "white",
-        padding: 25
+    <div style={{ fontFamily: "Arial", padding: 20 }}>
+
+      <h1>🚌 Transporte Escolar</h1>
+
+      <select value={bairro} onChange={(e) => setBairro(e.target.value)}>
+        <option>Aldeia Park</option>
+        <option>Buriti</option>
+      </select>
+
+      <div style={{
+        marginTop: 10,
+        padding: 10,
+        background: "#111",
+        color: "#fff"
       }}>
-        <h1>🚌 Transporte Escolar</h1>
-        <p>Rastreamento em tempo real + IA de chegada</p>
-      </header>
-
-      <main style={{ maxWidth: 900, margin: "0 auto", padding: 20 }}>
-
-        {/* SELECT */}
-        <div style={{ background: "white", padding: 20, borderRadius: 16 }}>
-          <label><b>Bairro</b></label>
-
-          <select
-            value={bairro}
-            onChange={(e) => setBairro(e.target.value)}
-            style={{ width: "100%", padding: 12, marginTop: 10 }}
-          >
-            <option>Aldeia Park</option>
-            <option>Buriti</option>
-          </select>
-        </div>
-
-        {/* 🧠 IA */}
-        <div style={{
-          marginTop: 15,
-          background: "#0f172a",
-          color: "white",
-          padding: 15,
-          borderRadius: 12
-        }}>
-          <h3>🧠 IA de Previsão</h3>
-
-          {eta ? (
-            <p>🚌 Chegada estimada: <b>{eta} min</b></p>
-          ) : (
-            <p>Calculando previsão...</p>
-          )}
-        </div>
-
-        {/* PARADAS */}
-        <div style={{ marginTop: 20 }}>
-          {carregando ? (
-            <p>⏳ Calculando rota...</p>
-          ) : (
-            paradas.map((p, i) => (
-              <div key={i} style={{
-                background: "white",
-                padding: 15,
-                marginBottom: 10,
-                borderRadius: 12
-              }}>
-                <b>{p.nome}</b>
-                <p>{p.distancia}</p>
-                <span>{p.tempo}</span>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* MAPA */}
-        <button
-          onClick={() => setMostrarMapa(!mostrarMapa)}
-          style={{
-            width: "100%",
-            marginTop: 20,
-            padding: 15,
-            background: "#2563eb",
-            color: "white",
-            border: "none",
-            borderRadius: 12
-          }}
-        >
-          {mostrarMapa ? "Fechar mapa" : "Ver mapa em tempo real"}
-        </button>
-
-        {mostrarMapa && (
-          <div style={{ marginTop: 20 }}>
-            <MapComponent
-              origem={origemAtual}
-              paradas={rotaAtual}
-            />
-          </div>
+        <h3>🧠 IA ETA</h3>
+        {eta ? (
+          <p>Chegada: {eta} min</p>
+        ) : (
+          <p>Aguardando dados do ônibus...</p>
         )}
+      </div>
 
-      </main>
+      <button onClick={() => setMostrarMapa(!mostrarMapa)}>
+        Mapa
+      </button>
+
+      {mostrarMapa && (
+        <MapComponent
+          origem={origemAtual}
+          paradas={rotaAtual}
+        />
+      )}
+
     </div>
   );
 }
