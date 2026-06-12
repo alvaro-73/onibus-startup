@@ -55,37 +55,35 @@ export default function Motorista() {
       motoristaEmail: usuario?.email,
       iniciadoEm: Date.now(),
     });
+navigator.geolocation.watchPosition(
+  async (pos) => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const now = Date.now();
 
-    // 📍 GPS + 📜 HISTÓRICO (AQUI ESTÁ A IA)
-    const id = navigator.geolocation.watchPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const now = Date.now();
+    console.log("🚍 GPS RODANDO:", lat, lng);
 
-        // 🚍 posição atual (tempo real)
-        await set(ref(db, `onibus/${rota}`), {
-          lat,
-          lng,
-          atualizadoEm: now,
-          motoristaId: usuario?.uid,
-        });
+    // 🔥 TESTE 1: onibus
+    await set(ref(db, `onibus/aldeiaPark`), {
+      lat,
+      lng,
+      atualizadoEm: now,
+    });
 
-        // 📜 histórico (BASE DA IA)
-        await set(ref(db, `historico/${rota}/${now}`), {
-          lat,
-          lng,
-          timestamp: now,
-        });
-      },
-      (err) => console.log("GPS error:", err),
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000,
-      }
-    );
+    // 🔥 TESTE 2: histórico FORÇADO
+    await set(ref(db, `historico/aldeiaPark/teste`), {
+      lat,
+      lng,
+      timestamp: now,
+    });
 
+    console.log("📜 HISTÓRICO ENVIADO");
+  },
+  (err) => {
+    console.log("❌ GPS ERROR:", err);
+  },
+  { enableHighAccuracy: true }
+);
     setWatchId(id);
   }
 
