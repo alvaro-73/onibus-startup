@@ -1,213 +1,201 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set, onValue } from "firebase/database";
-import { auth, db } from "../firebase";
+import { db } from "../firebase";
 
 type Rota = "aldeiaPark" | "buriti";
 
+type Parada = {
+  nome: string;
+  coords: [number, number];
+};
+
+const paradasAldeiaPark: Parada[] = [
+  { nome: "Smartfit", coords: [-4.1816, -38.4593] },
+  { nome: "Sabor Divino", coords: [-4.1803, -38.4594] },
+  { nome: "Dione", coords: [-4.1831, -38.4674] },
+  { nome: "Coriolano", coords: [-4.1732, -38.4611] },
+  { nome: "Liceu", coords: [-4.1685, -38.4630] },
+];
+
+const paradasBuriti: Parada[] = [
+  { nome: "Madeireira Roma", coords: [-4.1769, -38.4815] },
+  { nome: "Marina", coords: [-4.1755, -38.4729] },
+  { nome: "MCR Lubrificantes", coords: [-4.1769, -38.4785] },
+  { nome: "Municipal", coords: [-4.1752, -38.4686] },
+  { nome: "Liceu", coords: [-4.1685, -38.4630] },
+];
+
 export default function Motorista() {
-  const router = useRouter();
+  const [rotaSelecionada, setRotaSelecionada] = useState<Rota>("aldeiaPark");
 
-  const [usuario, setUsuario] = useState<any>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [alerta, setAlerta] = useState(false);
+  const [justificativa, setJustificativa] = useState("");
 
-  const [rotas, setRotas] = useState<any>({});
-  const [watchId, setWatchId] = useState<number | null>(null);
+  const [posicao, setPosicao] = useState({ lat: 0, lng: 0 });
 
-  // 🔐 AUTH
+  const rotaAtual =
+    rotaSelecionada === "buriti"
+      ? paradasBuriti
+      : paradasAldeiaPark;
+
+  // 🚍 GPS + DETECÇÃO DE ROTA
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setUsuario(user);
-      setLoadingAuth(false);
-    });
+    if (typeof window === "undefined") return;
 
-    return () => unsub();
-  }, []);
-
-  // 📡 ROTAS EM TEMPO REAL
-  useEffect(() => {
-    const rotasRef = ref(db, "viagens");
-
-    const unsub = onValue(rotasRef, (snapshot) => {
-      setRotas(snapshot.val() || {});
-    });
-
-    return () => unsub();
-  }, []);
-
-  // 🚀 INICIAR VIAGEM
-  async function iniciarViagem(rota: Rota) {
-    const atual = rotas?.[rota];
-
-    if (atual?.status === "em_andamento") {
-      alert("Essa rota já está em andamento");
-      return;
-    }
-
-    await set(ref(db, `viagens/${rota}`), {
-      status: "em_andamento",
-      motoristaId: usuario?.uid,
-      motoristaEmail: usuario?.email,
-      iniciadoEm: Date.now(),
-    });
-
-    // 📍 GPS EM TEMPO REAL + HISTÓRICO (CORRIGIDO)
-    const watchIdLocal = navigator.geolocation.watchPosition(
-      async (pos) => {
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        const now = Date.now();
 
-        const rotaRef = `onibus/${rota}`;
+        setPosicao({ lat, lng });
+
+        verificarDesvio(lat, lng);
 
         // 🚍 posição atual
-        await set(ref(db, rotaRef), {
+        set(ref(db, `onibus/${rotaSelecionada}`), {
           lat,
           lng,
-          atualizadoEm: now,
-          motoristaId: usuario?.uid,
-        });
-
-        // 📜 histórico (IA usa isso)
-        await set(ref(db, `historico/${rota}/${now}`), {
-          lat,
-          lng,
-          timestamp: now,
+          atualizadoEm: Date.now(),
         });
       },
-      (err) => console.log("GPS erro:", err),
+      (err) => console.log(err),
       { enableHighAccuracy: true }
     );
 
-    // ⚠️ IMPORTANTE: agora está definido corretamente
-    setWatchId(watchIdLocal);
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [rotaSelecionada]);
+
+  // 🧠 DISTÂNCIA ENTRE DOIS PONTOS
+  function distancia(a: any, b: any) {
+    const R = 6371;
+    const toRad = (v: number) => (v * Math.PI) / 180;
+
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+
+    const x =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(a.lat)) *
+        Math.cos(toRad(b.lat)) *
+        Math.sin(dLng / 2) ** 2;
+
+    return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
   }
 
-  // 🛑 PARAR VIAGEM
-  async function pararViagem(rota: Rota) {
-    const atual = rotas?.[rota];
+  // 📍 distância até rota
+  function distanciaDaRota(pos: any, rota: Parada[]) {
+    let menor = Infinity;
 
-    if (atual?.motoristaId !== usuario?.uid) {
-      alert("Você não pode parar essa rota");
-      return;
+    for (const parada of rota) {
+      const d = distancia(pos, {
+        lat: parada.coords[0],
+        lng: parada.coords[1],
+      });
+
+      if (d < menor) menor = d;
     }
 
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
-      setWatchId(null);
+    return menor;
+  }
+
+  // 🚨 IA DE DESVIO
+  function verificarDesvio(lat: number, lng: number) {
+    const dist = distanciaDaRota({ lat, lng }, rotaAtual);
+
+    if (dist > 0.5) {
+      setAlerta(true);
+    } else {
+      setAlerta(false);
+      setJustificativa("");
     }
-
-    await set(ref(db, `viagens/${rota}`), {
-      status: "livre",
-      motoristaId: null,
-      motoristaEmail: null,
-      iniciadoEm: null,
-    });
   }
 
-  async function sair() {
-    await signOut(auth);
-    router.push("/");
-  }
+  // 💾 SALVAR JUSTIFICATIVA
+  async function enviarJustificativa() {
+    if (!justificativa) return;
 
-  if (loadingAuth) {
-    return (
-      <div style={{ padding: 40 }}>
-        <h2>Carregando...</h2>
-      </div>
+    await set(
+      ref(db, `justificativas/${rotaSelecionada}/${Date.now()}`),
+      {
+        texto: justificativa,
+        motoristaId: "motorista_atual",
+        posicao,
+        criadoEm: Date.now(),
+      }
     );
+
+    alert("Justificativa enviada!");
+    setAlerta(false);
+    setJustificativa("");
   }
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#f3f4f6",
-      padding: 30,
-      fontFamily: "Arial"
-    }}>
+    <div style={{ fontFamily: "Arial", padding: 20 }}>
+
+      <h1>👨‍✈️ Motorista</h1>
+
+      {/* SELEÇÃO DE ROTA */}
+      <select
+        value={rotaSelecionada}
+        onChange={(e) => setRotaSelecionada(e.target.value as Rota)}
+      >
+        <option value="aldeiaPark">Aldeia Park</option>
+        <option value="buriti">Buriti</option>
+      </select>
+
+      {/* POSIÇÃO */}
       <div style={{
-        maxWidth: 800,
-        margin: "0 auto",
-        background: "white",
-        padding: 30,
-        borderRadius: 20
+        marginTop: 15,
+        padding: 10,
+        background: "#111",
+        color: "white",
+        borderRadius: 10
       }}>
-        <h1>👨‍✈️ Área do Motorista</h1>
+        <p>📍 Lat: {posicao.lat}</p>
+        <p>📍 Lng: {posicao.lng}</p>
+      </div>
 
-        <p><strong>Logado:</strong> {usuario?.email}</p>
+      {/* 🚨 ALERTA DE DESVIO */}
+      {alerta && (
+        <div style={{
+          marginTop: 15,
+          padding: 15,
+          background: "red",
+          color: "white",
+          borderRadius: 10
+        }}>
+          <p>🚨 Você saiu da rota!</p>
 
-        {/* 🚍 ROTAS */}
-        {(["aldeiaPark", "buriti"] as Rota[]).map((rota) => (
-          <div key={rota} style={{
-            border: "1px solid #ddd",
-            borderRadius: 12,
-            padding: 15,
-            marginTop: 20
-          }}>
-            <h3>🚌 {rota}</h3>
+          <p>Justifique o motivo:</p>
 
-            <p>
-              Status:{" "}
-              {rotas?.[rota]?.status === "em_andamento"
-                ? "🔴 Em andamento"
-                : "🟢 Livre"}
-            </p>
-
-            <p>
-              Motorista: {rotas?.[rota]?.motoristaEmail || "-"}
-            </p>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => iniciarViagem(rota)}
-                disabled={rotas?.[rota]?.status === "em_andamento"}
-                style={{
-                  padding: 12,
-                  background: "#22c55e",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 10
-                }}
-              >
-                ▶️ Iniciar
-              </button>
-
-              <button
-                onClick={() => pararViagem(rota)}
-                disabled={rotas?.[rota]?.motoristaId !== usuario?.uid}
-                style={{
-                  padding: 12,
-                  background: "#ef4444",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 10
-                }}
-              >
-                ⏹️ Parar
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {/* 🚪 SAIR */}
-        <div style={{ marginTop: 30 }}>
-          <button
-            onClick={sair}
+          <textarea
+            value={justificativa}
+            onChange={(e) => setJustificativa(e.target.value)}
             style={{
-              padding: 12,
-              background: "#2563eb",
+              width: "100%",
+              height: 80,
+              marginTop: 10
+            }}
+          />
+
+          <button
+            onClick={enviarJustificativa}
+            style={{
+              marginTop: 10,
+              padding: 10,
+              background: "black",
               color: "white",
               border: "none",
-              borderRadius: 10
+              borderRadius: 8
             }}
           >
-            Sair
+            Enviar justificativa
           </button>
         </div>
-      </div>
+      )}
+
     </div>
   );
 }
