@@ -48,16 +48,11 @@ export default function Home() {
   const [origemAtual, setOrigemAtual] =
     useState<[number, number]>(origemPadrao);
 
-  // 🧠 IA STATE
-  const [historico, setHistorico] = useState<any[]>([]);
-  const [eta, setEta] = useState<number | null>(null);
-
   // 🚍 ONIBUS EM TEMPO REAL (CORRIGIDO)
   useEffect(() => {
     const rota = bairro === "Buriti" ? "buriti" : "aldeiaPark";
 
     const onibusRef = ref(db, `onibus/${rota}`);
-    const histRef = ref(db, `historico/${rota}`);
 
     const unsub1 = onValue(onibusRef, (snap) => {
       const data = snap.val();
@@ -67,90 +62,11 @@ export default function Home() {
       }
     });
 
-    const unsub2 = onValue(histRef, (snap) => {
-      const data = snap.val();
-
-      if (!data) {
-        setHistorico([]);
-        return;
-      }
-
-      // 🔥 CORREÇÃO IMPORTANTE
-      const lista = Object.values(data).filter(Boolean);
-      setHistorico(lista);
-    });
-
     return () => {
       unsub1();
-      unsub2();
     };
   }, [bairro]);
 
-  // 🧠 IA DE ETA (CORRIGIDA)
-  function calcularETA(lista: any[], destino: [number, number]) {
-    if (!lista || lista.length < 2) return null;
-
-    const ultimo = lista[lista.length - 1];
-    const anterior = lista[lista.length - 2];
-
-    const toRad = (v: number) => (v * Math.PI) / 180;
-
-    function distancia(a: any, b: any) {
-      const R = 6371;
-
-      const dLat = toRad(b.lat - a.lat);
-      const dLng = toRad(b.lng - a.lng);
-
-      const x =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(a.lat)) *
-          Math.cos(toRad(b.lat)) *
-          Math.sin(dLng / 2) ** 2;
-
-      return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-    }
-
-    const distPercorrida = distancia(anterior, ultimo);
-
-    const tempoMs = ultimo.timestamp - anterior.timestamp;
-    const horas = tempoMs / 3600000;
-
-    // 🔥 EVITA BUG
-    const velocidade =
-      horas > 0 ? distPercorrida / horas : 30;
-
-    const distDestino = distancia(ultimo, {
-      lat: destino[0],
-      lng: destino[1],
-    });
-
-    const etaHoras = distDestino / (velocidade || 30);
-
-    return Math.max(Math.round(etaHoras * 60), 1);
-  }
-
-  // 🧠 ATUALIZA ETA (CORRIGIDO)
-  useEffect(() => {
-    if (!historico || historico.length < 2) {
-      setEta(null);
-      return;
-    }
-
-    const rota =
-      bairro === "Buriti"
-        ? paradasBuriti
-        : paradasAldeiaPark;
-
-    const destino = rota[rota.length - 1].coords;
-
-    const tempo = calcularETA(historico, destino);
-
-    if (tempo && !isNaN(tempo)) {
-      setEta(tempo);
-    } else {
-      setEta(null);
-    }
-  }, [historico, bairro]);
 
   // 📍 ROTAS (ORIGINAL)
   useEffect(() => {
@@ -241,7 +157,7 @@ export default function Home() {
         padding: 25
       }}>
         <h1>🚌 Transporte Escolar</h1>
-        <p>Rastreamento em tempo real + IA de chegada</p>
+        <p>Rastreamento em tempo real</p>
       </header>
 
       <main style={{ maxWidth: 900, margin: "0 auto", padding: 20 }}>
@@ -260,23 +176,7 @@ export default function Home() {
           </select>
         </div>
 
-        {/* 🧠 IA */}
-        <div style={{
-          marginTop: 15,
-          background: "#0f172a",
-          color: "white",
-          padding: 15,
-          borderRadius: 12
-        }}>
-          <h3>🧠 IA de Previsão</h3>
-
-          {eta ? (
-            <p>🚌 Chegada estimada: <b>{eta} min</b></p>
-          ) : (
-            <p>Calculando previsão...</p>
-          )}
-        </div>
-
+        
         {/* PARADAS */}
         <div style={{ marginTop: 20 }}>
           {carregando ? (
