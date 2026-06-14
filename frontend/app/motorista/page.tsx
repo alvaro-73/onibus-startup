@@ -124,11 +124,19 @@ export default function Motorista() {
       navigator.geolocation.watchPosition(
         async (position) => {
           try {
+            const [velocidadeAtual, setVelocidadeAtual] =
+              useState(0);
             const lat =
               position.coords.latitude;
 
             const lng =
               position.coords.longitude;
+            
+            const velocidade =
+              position.coords.speed ?? 0;
+
+            const velocidadeKmH =
+              velocidade * 3.6;
 
             const now =
               Date.now();
@@ -137,7 +145,9 @@ export default function Motorista() {
               lat,
               lng,
             });
-
+            setVelocidadeAtual(
+              velocidadeKmH
+            );
             setUltimaAtualizacao(
               new Date(
                 now
@@ -157,9 +167,14 @@ export default function Motorista() {
               {
                 lat,
                 lng,
+                speed: velocidade,
+                speedKmH: velocidadeKmH,
+
                 atualizadoEm: now,
+
                 motoristaId:
                   usuario?.uid ?? null,
+
                 motorista:
                   usuario?.email ?? "",
               }
@@ -173,7 +188,12 @@ export default function Motorista() {
               {
                 lat,
                 lng,
+
+                speed: velocidade,
+                speedKmH: velocidadeKmH,
+
                 timestamp: now,
+
                 rota:
                   rotaSelecionada,
               }
@@ -421,7 +441,13 @@ export default function Motorista() {
               width: "100%",
             }}
           />
-
+          <p>
+             Velocidade:
+            {" "}
+            {velocidadeAtual.toFixed(1)}
+            {" "}
+            km/h
+          </p>
           <button
             onClick={
               enviarJustificativa
@@ -437,4 +463,5 @@ export default function Motorista() {
       )}
     </div>
   );
+  
 }
