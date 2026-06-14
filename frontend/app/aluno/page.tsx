@@ -10,9 +10,7 @@ const MapComponent = dynamic(
   { ssr: false }
 );
 
-const [velocidadeAtual, setVelocidadeAtual] =
-  useState(0);
-  
+
 type Parada = {
   nome: string;
   coords: [number, number];

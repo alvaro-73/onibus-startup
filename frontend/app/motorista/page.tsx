@@ -18,6 +18,9 @@ type Rota = "aldeiaPark" | "buriti";
 export default function Motorista() {
   const router = useRouter();
 
+  const [velocidadeAtual, setVelocidadeAtual] =
+  useState(0);
+
   const [usuario, setUsuario] =
     useState<User | null>(null);
 
@@ -87,7 +90,7 @@ export default function Motorista() {
           }),
         }
       );
-
+        
       const dados =
         await resposta.json();
 
@@ -124,8 +127,7 @@ export default function Motorista() {
       navigator.geolocation.watchPosition(
         async (position) => {
           try {
-            const [velocidadeAtual, setVelocidadeAtual] =
-              useState(0);
+
             const lat =
               position.coords.latitude;
 
