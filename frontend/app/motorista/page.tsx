@@ -380,6 +380,14 @@ export default function Motorista() {
         }}
       >
         <p>
+             Velocidade:
+            {" "}
+            {velocidadeAtual.toFixed(1)}
+            {" "}
+            km/h
+          </p>
+          
+        <p>
           📍 Latitude:
           {" "}
           {posicao.lat}
@@ -443,13 +451,6 @@ export default function Motorista() {
               width: "100%",
             }}
           />
-          <p>
-             Velocidade:
-            {" "}
-            {velocidadeAtual.toFixed(1)}
-            {" "}
-            km/h
-          </p>
           <button
             onClick={
               enviarJustificativa
