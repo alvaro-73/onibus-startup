@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  --fb-green: #16a34a;
+  --fb-green-dark: #15803d;
+  --fb-green-light: #dcfce7;
+  --fb-bg: #ffffff;
+  --fb-text: #0f172a;
+  --fb-muted: #64748b;
+  --fb-border: #e5e7eb;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--fb-bg);
+  color: var(--fb-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Logotipo "fluxbus" — Kaufmann Bold BT (fallback para scripts manuscritas) */
+.logo-fluxbus {
+  font-family: "Kaufmann Bd BT", "Kaufmann BT", "Brush Script MT", "Lucida Handwriting", cursive;
+  color: var(--fb-green);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+/* Ajuste para o menu bottom não cobrir conteúdo em mobile */
+.with-bottom-nav {
+  padding-bottom: 72px;
+}
+
+@media (min-width: 768px) {
+  .with-bottom-nav {
+    padding-bottom: 0;
+    padding-left: 240px;
+  }
+}
