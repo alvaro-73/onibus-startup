@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { ref, onValue } from "firebase/database";
@@ -16,7 +16,8 @@ type ParadaCalc = {
   distancia: string;
 };
 
-export default function AlunoPage() {
+// 1. Todo o conteúdo original e lógica da página ficam aqui dentro
+function AlunoContent() {
   const bairros = useMemo(() => getBairrosUnicos(), []);
   const search = useSearchParams();
   const rotaInicialId = search.get("rota");
@@ -172,5 +173,14 @@ export default function AlunoPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// 2. O export padrão envolve o conteúdo com o Suspense para blindar o Build do Next.js
+export default function AlunoPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-500">Carregando mapa e rotas...</div>}>
+      <AlunoContent />
+    </Suspense>
   );
 }
