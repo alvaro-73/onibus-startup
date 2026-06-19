@@ -20,8 +20,9 @@ export default function LoginClient() {
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!firebaseConfigured) {
-      setErro("Servico de autenticacao indisponivel. Configure as variaveis NEXT_PUBLIC_FIREBASE_* em .env.local.");
+    // 🔥 proteção Firebase (Vercel safe)
+    if (!firebaseConfigured || !auth || !db) {
+      setErro("Serviço de autenticação indisponível.");
       return;
     }
 
@@ -29,20 +30,36 @@ export default function LoginClient() {
       setErro("");
       setLoading(true);
 
+      // 🔥 login Firebase
       const cred = await signInWithEmailAndPassword(auth, email, senha);
+
+      // 🔥 pega dados do usuário
       const snap = await get(ref(db, `usuarios/${cred.user.uid}`));
       const dados = snap.val();
 
+      // 🔥 cookie simples de sessão
       document.cookie = `fluxbus_auth=${cred.user.uid}; path=/; max-age=2592000`;
 
+      // 🔥 redirecionamento inteligente
       const next = search.get("next");
 
-      if (next) router.push(next);
-      else if (dados?.tipo === "motorista") router.push("/motorista");
-      else if (dados?.tipo === "aluno") router.push("/aluno");
-      else router.push("/");
-    } catch {
-      setErro("Email ou senha invalidos");
+      if (next) {
+        router.push(next);
+        return;
+      }
+
+      if (dados?.tipo === "aluno") {
+        router.push("/aluno");
+      } 
+      else if (dados?.tipo === "motorista") {
+        router.push("/motorista");
+      } 
+      else {
+        router.push("/");
+      }
+
+    } catch (err) {
+      setErro("Email ou senha inválidos");
     } finally {
       setLoading(false);
     }
@@ -55,8 +72,13 @@ export default function LoginClient() {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-900 mb-1">Entrar</h1>
-        <p className="text-sm text-slate-600 mb-6">Acesse sua conta Fluxbus.</p>
+        <h1 className="text-2xl font-bold text-slate-900 mb-1">
+          Entrar
+        </h1>
+
+        <p className="text-sm text-slate-600 mb-6">
+          Acesse sua conta Fluxbus.
+        </p>
 
         <form onSubmit={entrar} className="space-y-3">
           <input
@@ -77,7 +99,9 @@ export default function LoginClient() {
             required
           />
 
-          {erro && <p className="text-sm text-red-600">{erro}</p>}
+          {erro && (
+            <p className="text-sm text-red-600">{erro}</p>
+          )}
 
           <button
             type="submit"
@@ -92,6 +116,7 @@ export default function LoginClient() {
           <Link href="/" className="text-slate-600 hover:underline">
             Cancelar
           </Link>
+
           <Link href="/cadastro" className="text-fluxbus-blue hover:underline">
             Criar conta
           </Link>
