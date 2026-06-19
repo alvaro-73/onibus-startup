@@ -20,8 +20,8 @@ export default function LoginClient() {
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!firebaseConfigured) {
-      setErro("Servico de autenticacao indisponivel. Configure as variaveis NEXT_PUBLIC_FIREBASE_* em .env.local.");
+    if (!firebaseConfigured || !auth || !db) {
+      setErro("Firebase nao configurado na Vercel.");
       return;
     }
 
@@ -30,6 +30,7 @@ export default function LoginClient() {
       setLoading(true);
 
       const cred = await signInWithEmailAndPassword(auth, email, senha);
+
       const snap = await get(ref(db, `usuarios/${cred.user.uid}`));
       const dados = snap.val();
 
@@ -56,15 +57,14 @@ export default function LoginClient() {
 
       <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
         <h1 className="text-2xl font-bold text-slate-900 mb-1">Entrar</h1>
-        <p className="text-sm text-slate-600 mb-6">Acesse sua conta Fluxbus.</p>
 
-        <form onSubmit={entrar} className="space-y-3">
+        <form onSubmit={entrar} className="space-y-3 mt-6">
           <input
             type="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-fluxbus-blue"
+            className="w-full px-4 py-3 border rounded-lg"
             required
           />
 
@@ -73,7 +73,7 @@ export default function LoginClient() {
             placeholder="Senha"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
-            className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-fluxbus-blue"
+            className="w-full px-4 py-3 border rounded-lg"
             required
           />
 
@@ -82,19 +82,15 @@ export default function LoginClient() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-fluxbus-blue text-white py-3 rounded-lg font-semibold hover:bg-fluxbus-blue-600 disabled:opacity-60"
+            className="w-full bg-blue-600 text-white py-3 rounded-lg"
           >
             {loading ? "Entrando..." : "Entrar"}
           </button>
         </form>
 
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <Link href="/" className="text-slate-600 hover:underline">
-            Cancelar
-          </Link>
-          <Link href="/cadastro" className="text-fluxbus-blue hover:underline">
-            Criar conta
-          </Link>
+        <div className="mt-4 flex justify-between text-sm">
+          <Link href="/">Cancelar</Link>
+          <Link href="/cadastro">Criar conta</Link>
         </div>
       </div>
     </div>

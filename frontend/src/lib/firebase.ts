@@ -12,24 +12,21 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-export const firebaseConfigured: boolean = Boolean(
-  firebaseConfig.apiKey &&
-    firebaseConfig.authDomain &&
-    firebaseConfig.databaseURL &&
-    firebaseConfig.projectId &&
-    firebaseConfig.appId,
-);
+export const firebaseConfigured =
+  !!firebaseConfig.apiKey &&
+  !!firebaseConfig.authDomain &&
+  !!firebaseConfig.databaseURL &&
+  !!firebaseConfig.projectId &&
+  !!firebaseConfig.appId;
 
-let _app: FirebaseApp | null = null;
-let _db: Database | null = null;
-let _auth: Auth | null = null;
+let app: FirebaseApp | undefined;
+let db: Database | undefined;
+let auth: Auth | undefined;
 
 if (firebaseConfigured) {
-  _app = getApps().length ? getApps()[0]! : initializeApp(firebaseConfig as Record<string, string>);
-  _db = getDatabase(_app);
-  _auth = getAuth(_app);
+  app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+  db = getDatabase(app);
+  auth = getAuth(app);
 }
 
-export const app = _app;
-export const db = _db as Database;
-export const auth = _auth as Auth;
+export { app, db, auth };
