@@ -20,7 +20,6 @@ export default function LoginClient() {
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
 
-    // 🔥 proteção Firebase (Vercel safe)
     if (!firebaseConfigured || !auth || !db) {
       setErro("Serviço de autenticação indisponível.");
       return;
@@ -30,32 +29,31 @@ export default function LoginClient() {
       setErro("");
       setLoading(true);
 
-      // 🔥 login Firebase
       const cred = await signInWithEmailAndPassword(auth, email, senha);
 
-      // 🔥 pega dados do usuário
       const snap = await get(ref(db, `usuarios/${cred.user.uid}`));
       const dados = snap.val();
 
-      // 🔥 cookie simples de sessão
+      // 🔥 garante cookie imediato
       document.cookie = `fluxbus_auth=${cred.user.uid}; path=/; max-age=2592000`;
 
-      // 🔥 redirecionamento inteligente
       const next = search.get("next");
 
-      if (next) {
-        router.push(next);
-        return;
-      }
+      // 🔥 força sincronização do browser antes de redirecionar
+      await new Promise((r) => setTimeout(r, 30));
 
-      if (dados?.tipo === "aluno") {
-        router.push("/aluno");
+      // 🔥 navegação correta (sem bug de estado antigo)
+      if (next) {
+        router.replace(next);
+      } 
+      else if (dados?.tipo === "aluno") {
+        router.replace("/aluno");
       } 
       else if (dados?.tipo === "motorista") {
-        router.push("/motorista");
+        router.replace("/motorista");
       } 
       else {
-        router.push("/");
+        router.replace("/");
       }
 
     } catch (err) {
