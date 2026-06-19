@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { ref, get } from "firebase/database";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
-import BackButton from "@/components/ui/BackButton";
 
 export default function LoginClient() {
   const router = useRouter();
@@ -21,40 +19,35 @@ export default function LoginClient() {
     e.preventDefault();
 
     if (!firebaseConfigured || !auth || !db) {
-      setErro("Serviço de autenticação indisponível.");
+      setErro("Firebase não configurado");
       return;
     }
 
     try {
-      setErro("");
       setLoading(true);
+      setErro("");
 
       const cred = await signInWithEmailAndPassword(auth, email, senha);
 
       const snap = await get(ref(db, `usuarios/${cred.user.uid}`));
       const dados = snap.val();
 
-      // 🔥 garante cookie imediato
+      // COOKIE (continua igual)
       document.cookie = `fluxbus_auth=${cred.user.uid}; path=/; max-age=2592000`;
 
       const next = search.get("next");
 
-      // 🔥 força sincronização do browser antes de redirecionar
-      await new Promise((r) => setTimeout(r, 30));
+      const destino =
+        next ??
+        (dados?.tipo === "motorista"
+          ? "/motorista"
+          : dados?.tipo === "aluno"
+          ? "/aluno"
+          : "/");
 
-      // 🔥 navegação correta (sem bug de estado antigo)
-      if (next) {
-        router.replace(next);
-      } 
-      else if (dados?.tipo === "aluno") {
-        router.replace("/aluno");
-      } 
-      else if (dados?.tipo === "motorista") {
-        router.replace("/motorista");
-      } 
-      else {
-        router.replace("/");
-      }
+      // 🔥 IMPORTANTE: força refresh do estado do app
+      router.push(destino);
+      router.refresh(); // <<< ISSO resolve seu problema
 
     } catch (err) {
       setErro("Email ou senha inválidos");
@@ -65,61 +58,31 @@ export default function LoginClient() {
 
   return (
     <div className="max-w-md mx-auto px-4 py-8">
-      <div className="mb-4">
-        <BackButton />
-      </div>
+      <form onSubmit={entrar} className="space-y-3">
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          className="w-full px-4 py-3 border rounded-lg"
+        />
 
-      <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-900 mb-1">
-          Entrar
-        </h1>
+        <input
+          value={senha}
+          onChange={(e) => setSenha(e.target.value)}
+          type="password"
+          placeholder="Senha"
+          className="w-full px-4 py-3 border rounded-lg"
+        />
 
-        <p className="text-sm text-slate-600 mb-6">
-          Acesse sua conta Fluxbus.
-        </p>
+        {erro && <p className="text-red-500 text-sm">{erro}</p>}
 
-        <form onSubmit={entrar} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-fluxbus-blue"
-            required
-          />
-
-          <input
-            type="password"
-            placeholder="Senha"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-fluxbus-blue"
-            required
-          />
-
-          {erro && (
-            <p className="text-sm text-red-600">{erro}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-fluxbus-blue text-white py-3 rounded-lg font-semibold hover:bg-fluxbus-blue-600 disabled:opacity-60"
-          >
-            {loading ? "Entrando..." : "Entrar"}
-          </button>
-        </form>
-
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <Link href="/" className="text-slate-600 hover:underline">
-            Cancelar
-          </Link>
-
-          <Link href="/cadastro" className="text-fluxbus-blue hover:underline">
-            Criar conta
-          </Link>
-        </div>
-      </div>
+        <button
+          disabled={loading}
+          className="w-full bg-blue-600 text-white py-3 rounded-lg"
+        >
+          {loading ? "Entrando..." : "Entrar"}
+        </button>
+      </form>
     </div>
   );
 }
