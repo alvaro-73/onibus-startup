@@ -29,16 +29,20 @@ export default function LoginClient() {
       setErro("");
       setLoading(true);
 
-      // 🔥 1. login Firebase (FONTE DE VERDADE)
       const cred = await signInWithEmailAndPassword(auth, email, senha);
 
-      // 🔥 2. pega tipo do usuário
       const snap = await get(ref(db, `usuarios/${cred.user.uid}`));
       const dados = snap.val();
 
+      // 🔥 garante cookie imediato
+      document.cookie = `fluxbus_auth=${cred.user.uid}; path=/; max-age=2592000`;
+
       const next = search.get("next");
 
-      // 🔥 3. redirecionamento imediato (SEM COOKIE)
+      // 🔥 força sincronização do browser antes de redirecionar
+      await new Promise((r) => setTimeout(r, 30));
+
+      // 🔥 navegação correta (sem bug de estado antigo)
       if (next) {
         router.replace(next);
       } 
