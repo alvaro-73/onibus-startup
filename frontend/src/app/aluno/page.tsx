@@ -1,186 +1,189 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
-import dynamic from "next/dynamic";
-import { useSearchParams } from "next/navigation";
-import { ref, onValue } from "firebase/database";
-import { db, firebaseConfigured } from "@/lib/firebase";
-import { ROTAS, getBairrosUnicos, getRotaPorBairro, getRotaPorId } from "@/data/rotas";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ref, set } from "firebase/database";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth, db, firebaseConfigured } from "@/lib/firebase";
+import { ROTAS, getBairrosUnicos, getRotaPorBairro } from "@/data/rotas";
 
-const MapComponent = dynamic(() => import("@/components/features/MapComponent"), { ssr: false });
+/* 📍 Haversine (distância em km) */
+function calcularDistancia(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const R = 6371;
 
-type ParadaCalc = {
-  nome: string;
-  coords: [number, number];
-  tempo: string;
-  distancia: string;
-};
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
 
-// 1. Todo o conteúdo original e lógica da página ficam aqui dentro
-function AlunoContent() {
-  const bairros = useMemo(() => getBairrosUnicos(), []);
-  const search = useSearchParams();
-  const rotaInicialId = search.get("rota");
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
 
-  const [bairro, setBairro] = useState<string>(() => {
-    if (rotaInicialId) {
-      const r = getRotaPorId(rotaInicialId);
-      if (r) return r.bairro;
-    }
-    return bairros[0] ?? "";
-  });
-
-  const rotaSelecionada = useMemo(() => getRotaPorBairro(bairro) ?? ROTAS[0], [bairro]);
-
-  const [paradas, setParadas] = useState<ParadaCalc[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [mostrarMapa, setMostrarMapa] = useState(false);
-  const [origemAtual, setOrigemAtual] = useState<[number, number]>(rotaSelecionada!.origem);
-  const [erroORS, setErroORS] = useState<string | null>(null);
-
-  // Onibus em tempo real (Firebase)
-  useEffect(() => {
-    if (!firebaseConfigured || !rotaSelecionada) return;
-    const onibusRef = ref(db, `onibus/${rotaSelecionada.id}`);
-    const unsub = onValue(onibusRef, (snap) => {
-      const data = snap.val();
-      if (data?.lat && data?.lng) setOrigemAtual([data.lat, data.lng]);
-    });
-    return () => unsub();
-  }, [rotaSelecionada]);
-
-  // Reset origem ao trocar de bairro
-  useEffect(() => {
-    if (rotaSelecionada) setOrigemAtual(rotaSelecionada.origem);
-  }, [rotaSelecionada]);
-
-  // Calculo de rotas (ORS) com debounce
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!rotaSelecionada) return;
-    setErroORS(null);
-    const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
-    if (!apiKey) {
-      setCarregando(false);
-      setErroORS("Chave do OpenRouteService nao configurada (NEXT_PUBLIC_ORS_API_KEY).");
-      setParadas(rotaSelecionada.paradas.map((p) => ({ ...p, tempo: "-", distancia: "-" })));
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setCarregando(true);
-      let pontoAtual = origemAtual;
-      let tempoTotal = 0;
-      let distanciaTotal = 0;
-      const resultados: ParadaCalc[] = [];
-      try {
-        for (const parada of rotaSelecionada.paradas) {
-          const resp = await fetch(
-            "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
-            {
-              method: "POST",
-              headers: { Authorization: apiKey, "Content-Type": "application/json" },
-              body: JSON.stringify({
-                coordinates: [
-                  [pontoAtual[1], pontoAtual[0]],
-                  [parada.coords[1], parada.coords[0]],
-                ],
-              }),
-            },
-          );
-          const data = await resp.json();
-          if (!resp.ok || !data?.features?.length) continue;
-          const summary = data.features[0].properties.summary;
-          tempoTotal += Math.ceil(summary.duration / 60);
-          distanciaTotal += summary.distance / 1000;
-          resultados.push({
-            nome: parada.nome,
-            coords: parada.coords,
-            tempo: `${tempoTotal} min`,
-            distancia: `${distanciaTotal.toFixed(1)} km`,
-          });
-          pontoAtual = parada.coords;
-        }
-        setParadas(resultados);
-      } catch (err) {
-        console.error(err);
-        setErroORS("Falha ao consultar OpenRouteService.");
-      } finally {
-        setCarregando(false);
-      }
-    }, 350);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [rotaSelecionada, origemAtual]);
-
-  if (!rotaSelecionada) return <div className="p-8">Nenhuma rota disponivel.</div>;
-
-  return (
-    <div className="max-w-4xl mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold text-slate-900 mb-1">Transporte Escolar</h1>
-      <p className="text-slate-600 mb-6">Rastreamento em tempo real</p>
-
-      <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
-        <label className="text-sm font-medium text-slate-700 block mb-2">Bairro</label>
-        <select
-          value={bairro}
-          onChange={(e) => setBairro(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-fluxbus-blue"
-        >
-          {bairros.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {erroORS && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
-          {erroORS}
-        </div>
-      )}
-
-      <div className="space-y-2 mb-4">
-        {carregando ? (
-          <p className="text-slate-500">Calculando rota...</p>
-        ) : (
-          paradas.map((p, i) => (
-            <div key={i} className="bg-white border border-slate-200 rounded-lg p-4 flex justify-between items-center">
-              <div>
-                <div className="font-semibold text-slate-900">{p.nome}</div>
-                <div className="text-xs text-slate-500">{p.distancia}</div>
-              </div>
-              <span className="text-sm text-fluxbus-blue font-medium">{p.tempo}</span>
-            </div>
-          ))
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setMostrarMapa((m) => !m)}
-        className="w-full bg-fluxbus-blue text-white py-3 rounded-lg font-semibold hover:bg-fluxbus-blue-600"
-      >
-        {mostrarMapa ? "Fechar mapa" : "Ver mapa em tempo real"}
-      </button>
-
-      {mostrarMapa && (
-        <div className="mt-4">
-          <MapComponent origem={origemAtual} paradas={rotaSelecionada.paradas} />
-        </div>
-      )}
-    </div>
-  );
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// 2. O export padrão envolve o conteúdo com o Suspense para blindar o Build do Next.js
-export default function AlunoPage() {
+export default function MotoristaPage() {
+  const router = useRouter();
+  const bairros = useMemo(() => getBairrosUnicos(), []);
+
+  const [usuario, setUsuario] = useState<User | null>(null);
+  const [bairro, setBairro] = useState(bairros[0] ?? "");
+
+  const rota = useMemo(
+    () => getRotaPorBairro(bairro) ?? ROTAS[0],
+    [bairro]
+  );
+
+  const [viagemAtiva, setViagemAtiva] = useState(false);
+  const [watchId, setWatchId] = useState<number | null>(null);
+
+  const [posicao, setPosicao] = useState({ lat: 0, lng: 0 });
+  const [velocidadeAtual, setVelocidadeAtual] = useState(0);
+
+  const [etaTotal, setEtaTotal] = useState(0);
+  const [statusIA, setStatusIA] = useState("Aguardando...");
+
+  /* 🔐 auth */
+  useEffect(() => {
+    if (!firebaseConfigured) return;
+
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUsuario(u);
+      if (!u) router.push("/login?next=/motorista");
+    });
+
+    return () => unsub();
+  }, [router]);
+
+  /* 🚀 cálculo ETA em tempo real */
+  function calcularETA(lat: number, lng: number) {
+    let distanciaTotal = 0;
+
+    for (const parada of rota.paradas) {
+      const dist = calcularDistancia(
+        lat,
+        lng,
+        parada.coords[0],
+        parada.coords[1]
+      );
+
+      distanciaTotal += dist;
+    }
+
+    const velocidadeKmH = Math.max(velocidadeAtual, 10); // evita divisão por zero
+    const etaMin = (distanciaTotal / velocidadeKmH) * 60;
+
+    setEtaTotal(etaMin);
+  }
+
+  /* 🤖 IA (mantida simples, igual seu sistema antigo) */
+  async function verificarDesvioIA(lat: number, lng: number) {
+    try {
+      const resp = await fetch(
+        process.env.NEXT_PUBLIC_IA_ENDPOINT ||
+          "https://startup-onibus-ia1.onrender.com/prever",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lat, lng }),
+        }
+      );
+
+      const data = await resp.json();
+      setStatusIA(data.alerta ? "🚨 Desvio detectado" : "✅ OK");
+    } catch {
+      setStatusIA("⚠️ IA offline");
+    }
+  }
+
+  /* ▶️ iniciar viagem */
+  function iniciarViagem() {
+    if (viagemAtiva) return;
+
+    setViagemAtiva(true);
+
+    const id = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const speed = pos.coords.speed ?? 0;
+        const speedKmH = speed * 3.6;
+
+        setPosicao({ lat, lng });
+        setVelocidadeAtual(speedKmH);
+
+        /* ETA recalculado em tempo real */
+        calcularETA(lat, lng);
+
+        await verificarDesvioIA(lat, lng);
+
+        await set(ref(db, `onibus/${rota.id}`), {
+          lat,
+          lng,
+          speedKmH,
+          etaMin: etaTotal,
+          motorista: usuario?.email ?? "",
+        });
+      },
+      (err) => console.error(err),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 10000,
+      }
+    );
+
+    setWatchId(id);
+  }
+
+  function pararViagem() {
+    setViagemAtiva(false);
+
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
+    }
+  }
+
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-500">Carregando mapa e rotas...</div>}>
-      <AlunoContent />
-    </Suspense>
+    <div className="max-w-3xl mx-auto p-6">
+      <h1 className="text-2xl font-bold">Motorista</h1>
+
+      <p className="text-sm mb-4">ETA total: {etaTotal.toFixed(0)} min</p>
+
+      <select
+        value={bairro}
+        disabled={viagemAtiva}
+        onChange={(e) => setBairro(e.target.value)}
+        className="border p-2 w-full mb-4"
+      >
+        {bairros.map((b) => (
+          <option key={b}>{b}</option>
+        ))}
+      </select>
+
+      <button
+        onClick={viagemAtiva ? pararViagem : iniciarViagem}
+        className={`w-full p-3 text-white rounded ${
+          viagemAtiva ? "bg-red-600" : "bg-blue-600"
+        }`}
+      >
+        {viagemAtiva ? "Parar" : "Iniciar"}
+      </button>
+
+      <div className="mt-4 p-4 border rounded">
+        <p>Velocidade: {velocidadeAtual.toFixed(1)} km/h</p>
+        <p>Lat: {posicao.lat}</p>
+        <p>Lng: {posicao.lng}</p>
+        <p>IA: {statusIA}</p>
+      </div>
+    </div>
   );
 }
