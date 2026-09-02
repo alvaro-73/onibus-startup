@@ -169,7 +169,11 @@ function AlunoContent() {
 
       {mostrarMapa && (
         <div className="mt-4">
-          <MapComponent origem={origemAtual} paradas={rotaSelecionada.paradas} />
+        <MapComponent
+         origem={rotaSelecionada.origem}
+         paradas={rotaSelecionada.paradas}
+         onibusPosicao={origemAtual}
+        />
         </div>
       )}
     </div>

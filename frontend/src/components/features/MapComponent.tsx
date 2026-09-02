@@ -60,6 +60,7 @@ type Parada = {
 type Props = {
   origem: [number, number];
   paradas: Parada[];
+  onibusPosicao?: [number, number] | null;
 };
 
 function Recenter({ pos }: { pos: [number, number] }) {
@@ -72,10 +73,21 @@ function Recenter({ pos }: { pos: [number, number] }) {
   return null;
 }
 
-export default function MapComponent({ origem, paradas }: Props) {
+export default function MapComponent({
+  origem,
+  paradas,
+  onibusPosicao,
+}: Props) {
   const [rotaRuas, setRotaRuas] = useState<[number, number][]>([]);
   const [erroRota, setErroRota] = useState<string | null>(null);
 
+  /*
+   * Calcula a rota FIXA pelas ruas.
+   *
+   * IMPORTANTE:
+   * A origem aqui é a origem da linha,
+   * NÃO a posição atual do ônibus.
+   */
   useEffect(() => {
     async function buscarRota() {
       if (!origem || paradas.length === 0) {
@@ -83,65 +95,77 @@ export default function MapComponent({ origem, paradas }: Props) {
         return;
       }
 
+      const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
+
+      if (!apiKey) {
+        setErroRota(
+          "Chave do OpenRouteService não configurada."
+        );
+        return;
+      }
+
       try {
         setErroRota(null);
 
-        // Origem + paradas
+        // Origem + todas as paradas na ordem definida
         const pontos = [
           origem,
           ...paradas.map((parada) => parada.coords),
         ];
 
         /*
-          Leaflet trabalha normalmente assim:
-          [latitude, longitude]
+         * OpenRouteService espera:
+         * [longitude, latitude]
+         */
+        const coordinates = pontos.map(([lat, lng]) => [
+          lng,
+          lat,
+        ]);
 
-          OSRM espera:
-          longitude,latitude
-        */
-        const coordenadasOSRM = pontos
-          .map(([lat, lng]) => `${lng},${lat}`)
-          .join(";");
-
-        const url =
-          `https://router.project-osrm.org/route/v1/driving/` +
-          `${coordenadasOSRM}` +
-          `?overview=full&geometries=geojson`;
-
-        const response = await fetch(url);
-
-        if (!response.ok) {
-          throw new Error("Não foi possível calcular a rota.");
-        }
+        const response = await fetch(
+          "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
+          {
+            method: "POST",
+            headers: {
+              Authorization: apiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              coordinates,
+            }),
+          }
+        );
 
         const data = await response.json();
 
         if (
-          data.code !== "Ok" ||
-          !data.routes ||
-          data.routes.length === 0
+          !response.ok ||
+          !data?.features ||
+          data.features.length === 0
         ) {
-          throw new Error("Nenhuma rota foi encontrada.");
+          console.error("Resposta do ORS:", data);
+          throw new Error(
+            "Não foi possível encontrar o trajeto pelas ruas."
+          );
         }
 
-        const coordenadasGeoJSON =
-          data.routes[0].geometry.coordinates;
-
         /*
-          GeoJSON retorna:
-          [longitude, latitude]
+         * GeoJSON retorna:
+         * [longitude, latitude]
+         *
+         * Leaflet usa:
+         * [latitude, longitude]
+         */
+        const geometry = data.features[0].geometry;
 
-          Leaflet precisa:
-          [latitude, longitude]
-        */
-        const rotaConvertida: [number, number][] =
-          coordenadasGeoJSON.map(
+        const coordenadas: [number, number][] =
+          geometry.coordinates.map(
             ([lng, lat]: [number, number]) => [lat, lng]
           );
 
-        setRotaRuas(rotaConvertida);
+        setRotaRuas(coordenadas);
       } catch (error) {
-        console.error("Erro ao buscar rota:", error);
+        console.error("Erro ao calcular rota:", error);
 
         setErroRota(
           error instanceof Error
@@ -186,7 +210,7 @@ export default function MapComponent({ origem, paradas }: Props) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* ROTA SEGUINDO AS RUAS */}
+        {/* ROTA PELAS RUAS */}
         {rotaRuas.length > 0 && (
           <Polyline
             positions={rotaRuas}
@@ -211,12 +235,19 @@ export default function MapComponent({ origem, paradas }: Props) {
           </Marker>
         ))}
 
-        {/* ÔNIBUS */}
-        <Marker position={origem} icon={onibusIcon}>
-          <Popup>Ônibus em tempo real</Popup>
-        </Marker>
+        {/* ÔNIBUS EM TEMPO REAL */}
+        {onibusPosicao && (
+          <Marker
+            position={onibusPosicao}
+            icon={onibusIcon}
+          >
+            <Popup>
+              🚌 Ônibus em tempo real
+            </Popup>
+          </Marker>
+        )}
 
-        <Recenter pos={origem} />
+        <Recenter pos={onibusPosicao ?? origem} />
       </MapContainer>
     </div>
   );
