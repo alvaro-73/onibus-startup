@@ -1,433 +1,190 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  Polyline,
-  useMap,
-} from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
+import { ref, onValue } from "firebase/database";
+import { db, firebaseConfigured } from "@/lib/firebase";
+import { ROTAS, getBairrosUnicos, getRotaPorBairro, getRotaPorId } from "@/data/rotas";
 
-type Ponto = [number, number];
+const MapComponent = dynamic(() => import("@/components/features/MapComponent"), { ssr: false });
 
-type Parada = {
+type ParadaCalc = {
   nome: string;
-  coords: Ponto;
+  coords: [number, number];
+  tempo: string;
+  distancia: string;
 };
 
-type Props = {
-  origem: Ponto;
-  paradas: Parada[];
-  onibusPosicao?: Ponto | null;
-};
+// 1. Todo o conteúdo original e lógica da página ficam aqui dentro
+function AlunoContent() {
+  const bairros = useMemo(() => getBairrosUnicos(), []);
+  const search = useSearchParams();
+  const rotaInicialId = search.get("rota");
 
-const defaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
-
-const onibusIcon = L.divIcon({
-  className: "fluxbus-onibus-icon",
-  html: `
-    <div
-      style="
-        background:#2563eb;
-        color:#fff;
-        border:2px solid #fff;
-        border-radius:9999px;
-        width:30px;
-        height:30px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        font-weight:700;
-        font-size:13px;
-        box-shadow:0 2px 6px rgba(0,0,0,.3);
-      "
-    >
-      🚌
-    </div>
-  `,
-  iconSize: [30, 30],
-  iconAnchor: [15, 15],
-});
-
-function Recenter({ pos }: { pos: Ponto }) {
-  const map = useMap();
-
-  useEffect(() => {
-    map.setView(pos);
-  }, [pos, map]);
-
-  return null;
-}
-
-/*
- * Distância aproximada entre dois pontos.
- * Para descobrir qual trecho da rota está mais próximo
- * do ônibus.
- */
-function distanciaQuadrada(a: Ponto, b: Ponto) {
-  const lat = a[0] - b[0];
-  const lng = a[1] - b[1];
-
-  return lat * lat + lng * lng;
-}
-
-/*
- * Descobre o ponto EXATO de um segmento mais próximo
- * da posição do ônibus.
- */
-function pontoMaisProximoNoSegmento(
-  ponto: Ponto,
-  inicio: Ponto,
-  fim: Ponto
-): Ponto {
-  const x = ponto[1];
-  const y = ponto[0];
-
-  const x1 = inicio[1];
-  const y1 = inicio[0];
-
-  const x2 = fim[1];
-  const y2 = fim[0];
-
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-
-  if (dx === 0 && dy === 0) {
-    return inicio;
-  }
-
-  let t =
-    ((x - x1) * dx + (y - y1) * dy) /
-    (dx * dx + dy * dy);
-
-  t = Math.max(0, Math.min(1, t));
-
-  return [
-    y1 + t * dy,
-    x1 + t * dx,
-  ];
-}
-
-/*
- * Encontra:
- *
- * - o ponto exato onde o ônibus está na rota;
- * - o índice do segmento correspondente.
- */
-function encontrarPosicaoNaRota(
-  rota: Ponto[],
-  onibus: Ponto
-) {
-  let menorDistancia = Infinity;
-  let melhorPonto: Ponto = rota[0];
-  let melhorSegmento = 0;
-
-  for (let i = 0; i < rota.length - 1; i++) {
-    const ponto = pontoMaisProximoNoSegmento(
-      onibus,
-      rota[i],
-      rota[i + 1]
-    );
-
-    const distancia = distanciaQuadrada(
-      onibus,
-      ponto
-    );
-
-    if (distancia < menorDistancia) {
-      menorDistancia = distancia;
-      melhorPonto = ponto;
-      melhorSegmento = i;
+  const [bairro, setBairro] = useState<string>(() => {
+    if (rotaInicialId) {
+      const r = getRotaPorId(rotaInicialId);
+      if (r) return r.bairro;
     }
-  }
+    return bairros[0] ?? "";
+  });
 
-  return {
-    ponto: melhorPonto,
-    segmento: melhorSegmento,
-    distancia: menorDistancia,
-  };
-}
+  const rotaSelecionada = useMemo(() => getRotaPorBairro(bairro) ?? ROTAS[0], [bairro]);
 
-export default function MapComponent({
-  origem,
-  paradas,
-  onibusPosicao,
-}: Props) {
-  const [rotaRuas, setRotaRuas] = useState<Ponto[]>([]);
-  const [erroRota, setErroRota] = useState<string | null>(null);
+  const [paradas, setParadas] = useState<ParadaCalc[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [mostrarMapa, setMostrarMapa] = useState(false);
+  const [origemAtual, setOrigemAtual] = useState<[number, number]>(rotaSelecionada!.origem);
+  const [erroORS, setErroORS] = useState<string | null>(null);
 
-  /*
-   * Guarda o maior progresso alcançado pelo ônibus.
-   *
-   * Isso evita que um erro momentâneo do GPS faça
-   * a rota já percorrida reaparecer.
-   */
-  const maiorSegmentoPercorrido = useRef(0);
-
-  /*
-   * Calcula a rota pelas ruas usando OpenRouteService.
-   */
+  // Onibus em tempo real (Firebase)
   useEffect(() => {
-    async function buscarRota() {
-      if (!origem || paradas.length === 0) {
-        setRotaRuas([]);
-        return;
-      }
+    if (!firebaseConfigured || !rotaSelecionada) return;
+    const onibusRef = ref(db, `onibus/${rotaSelecionada.id}`);
+    const unsub = onValue(onibusRef, (snap) => {
+      const data = snap.val();
+      if (data?.lat && data?.lng) setOrigemAtual([data.lat, data.lng]);
+    });
+    return () => unsub();
+  }, [rotaSelecionada]);
 
-      const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
+  // Reset origem ao trocar de bairro
+  useEffect(() => {
+    if (rotaSelecionada) setOrigemAtual(rotaSelecionada.origem);
+  }, [rotaSelecionada]);
 
-      if (!apiKey) {
-        setErroRota(
-          "Chave do OpenRouteService não configurada."
-        );
-        return;
-      }
-
+  // Calculo de rotas (ORS) com debounce
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!rotaSelecionada) return;
+    setErroORS(null);
+    const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
+    if (!apiKey) {
+      setCarregando(false);
+      setErroORS("Chave do OpenRouteService nao configurada (NEXT_PUBLIC_ORS_API_KEY).");
+      setParadas(rotaSelecionada.paradas.map((p) => ({ ...p, tempo: "-", distancia: "-" })));
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setCarregando(true);
+      let pontoAtual = origemAtual;
+      let tempoTotal = 0;
+      let distanciaTotal = 0;
+      const resultados: ParadaCalc[] = [];
       try {
-        setErroRota(null);
-
-        /*
-         * Origem + paradas na ordem definida.
-         */
-        const pontos = [
-          origem,
-          ...paradas.map((parada) => parada.coords),
-        ];
-
-        /*
-         * OpenRouteService:
-         * [longitude, latitude]
-         */
-        const coordinates = pontos.map(([lat, lng]) => [
-          lng,
-          lat,
-        ]);
-
-        const response = await fetch(
-          "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
-          {
-            method: "POST",
-            headers: {
-              Authorization: apiKey,
-              "Content-Type": "application/json",
+        for (const parada of rotaSelecionada.paradas) {
+          const resp = await fetch(
+            "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
+            {
+              method: "POST",
+              headers: { Authorization: apiKey, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                coordinates: [
+                  [pontoAtual[1], pontoAtual[0]],
+                  [parada.coords[1], parada.coords[0]],
+                ],
+              }),
             },
-            body: JSON.stringify({
-              coordinates,
-            }),
-          }
-        );
-
-        const data = await response.json();
-
-        if (
-          !response.ok ||
-          !data?.features ||
-          data.features.length === 0
-        ) {
-          console.error("Resposta ORS:", data);
-
-          throw new Error(
-            "Não foi possível encontrar a rota."
           );
+          const data = await resp.json();
+          if (!resp.ok || !data?.features?.length) continue;
+          const summary = data.features[0].properties.summary;
+          tempoTotal += Math.ceil(summary.duration / 60);
+          distanciaTotal += summary.distance / 1000;
+          resultados.push({
+            nome: parada.nome,
+            coords: parada.coords,
+            tempo: `${tempoTotal} min`,
+            distancia: `${distanciaTotal.toFixed(1)} km`,
+          });
+          pontoAtual = parada.coords;
         }
-
-        const geometry = data.features[0].geometry;
-
-        /*
-         * ORS:
-         * [longitude, latitude]
-         *
-         * Leaflet:
-         * [latitude, longitude]
-         */
-        const rotaConvertida: Ponto[] =
-          geometry.coordinates.map(
-            ([lng, lat]: [number, number]) => [
-              lat,
-              lng,
-            ]
-          );
-
-        setRotaRuas(rotaConvertida);
-
-        /*
-         * Quando a rota muda, reinicia o progresso.
-         */
-        maiorSegmentoPercorrido.current = 0;
-      } catch (error) {
-        console.error(
-          "Erro ao calcular rota:",
-          error
-        );
-
-        setErroRota(
-          error instanceof Error
-            ? error.message
-            : "Erro ao calcular rota."
-        );
-
-        setRotaRuas([]);
+        setParadas(resultados);
+      } catch (err) {
+        console.error(err);
+        setErroORS("Falha ao consultar OpenRouteService.");
+      } finally {
+        setCarregando(false);
       }
-    }
+    }, 350);
 
-    buscarRota();
-  }, [origem, paradas]);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [rotaSelecionada, origemAtual]);
 
-  /*
-   * Calcula automaticamente o restante da rota.
-   */
-  const rotaRestante = useMemo(() => {
-    if (
-      !onibusPosicao ||
-      rotaRuas.length < 2
-    ) {
-      return rotaRuas;
-    }
-
-    const resultado = encontrarPosicaoNaRota(
-      rotaRuas,
-      onibusPosicao
-    );
-
-    /*
-     * Evita que o GPS faça o ônibus voltar
-     * para um trecho que já foi percorrido.
-     */
-    if (
-      resultado.segmento >
-      maiorSegmentoPercorrido.current
-    ) {
-      maiorSegmentoPercorrido.current =
-        resultado.segmento;
-    }
-
-    const segmentoAtual =
-      maiorSegmentoPercorrido.current;
-
-    /*
-     * Se o ônibus já avançou, começamos
-     * exatamente na posição dele.
-     */
-    if (
-      resultado.segmento >=
-      maiorSegmentoPercorrido.current
-    ) {
-      return [
-        resultado.ponto,
-        ...rotaRuas.slice(
-          resultado.segmento + 1
-        ),
-      ];
-    }
-
-    /*
-     * Caso o GPS tenha dado uma pequena
-     * oscilada para trás, mantém a rota
-     * a partir do progresso anterior.
-     */
-    return rotaRuas.slice(segmentoAtual);
-  }, [rotaRuas, onibusPosicao]);
-
-  /*
-   * Se existe posição do ônibus, usamos ela.
-   * Caso contrário, usamos a origem.
-   */
-  const centroMapa =
-    onibusPosicao ?? origem;
+  if (!rotaSelecionada) return <div className="p-8">Nenhuma rota disponivel.</div>;
 
   return (
-    <div>
-      {erroRota && (
-        <div
-          style={{
-            marginBottom: 10,
-            padding: 10,
-            background: "#fee2e2",
-            color: "#991b1b",
-            borderRadius: 8,
-          }}
+    <div className="max-w-4xl mx-auto px-4 py-6">
+      <h1 className="text-2xl font-bold text-slate-900 mb-1">Transporte Escolar</h1>
+      <p className="text-slate-600 mb-6">Rastreamento em tempo real</p>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+        <label className="text-sm font-medium text-slate-700 block mb-2">Bairro</label>
+        <select
+          value={bairro}
+          onChange={(e) => setBairro(e.target.value)}
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-fluxbus-blue"
         >
-          {erroRota}
+          {bairros.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {erroORS && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+          {erroORS}
         </div>
       )}
 
-      <MapContainer
-        center={centroMapa}
-        zoom={14}
-        style={{
-          height: "500px",
-          width: "100%",
-          borderRadius: 12,
-        }}
+      <div className="space-y-2 mb-4">
+        {carregando ? (
+          <p className="text-slate-500">Calculando rota...</p>
+        ) : (
+          paradas.map((p, i) => (
+            <div key={i} className="bg-white border border-slate-200 rounded-lg p-4 flex justify-between items-center">
+              <div>
+                <div className="font-semibold text-slate-900">{p.nome}</div>
+                <div className="text-xs text-slate-500">{p.distancia}</div>
+              </div>
+              <span className="text-sm text-fluxbus-blue font-medium">{p.tempo}</span>
+            </div>
+          ))
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setMostrarMapa((m) => !m)}
+        className="w-full bg-fluxbus-blue text-white py-3 rounded-lg font-semibold hover:bg-fluxbus-blue-600"
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        {mostrarMapa ? "Fechar mapa" : "Ver mapa em tempo real"}
+      </button>
+
+      {mostrarMapa && (
+        <div className="mt-4">
+        <MapComponent
+         origem={rotaSelecionada.origem}
+         paradas={rotaSelecionada.paradas}
+         onibusPosicao={origemAtual}
         />
-
-        {/*
-         * SOMENTE A PARTE DA ROTA QUE AINDA FALTA
-         */
-        rotaRestante.length > 1 && (
-          <Polyline
-            positions={rotaRestante}
-            pathOptions={{
-              color: "#2563eb",
-              weight: 5,
-              opacity: 0.8,
-            }}
-          />
-        )}
-
-        {/*
-         * PARADAS
-         */}
-        {paradas.map((parada, i) => (
-          <Marker
-            key={`${parada.nome}-${i}`}
-            position={parada.coords}
-            icon={defaultIcon}
-          >
-            <Popup>
-              <strong>
-                Parada {i + 1}
-              </strong>
-              <br />
-              {parada.nome}
-            </Popup>
-          </Marker>
-        ))}
-
-        {/*
-         * ÔNIBUS
-         */}
-        {onibusPosicao && (
-          <Marker
-            position={onibusPosicao}
-            icon={onibusIcon}
-          >
-            <Popup>
-              🚌 Ônibus em tempo real
-            </Popup>
-          </Marker>
-        )}
-
-        <Recenter pos={centroMapa} />
-      </MapContainer>
+        </div>
+      )}
     </div>
+  );
+}
+
+// 2. O export padrão envolve o conteúdo com o Suspense para blindar o Build do Next.js
+export default function AlunoPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-500">Carregando mapa e rotas...</div>}>
+      <AlunoContent />
+    </Suspense>
   );
 }
