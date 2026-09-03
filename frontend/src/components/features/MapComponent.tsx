@@ -25,6 +25,8 @@ type Props = {
   onibusPosicao?: Ponto | null;
 };
 
+const RAIO_PARADA_METROS = 50;
+
 const defaultIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   iconRetinaUrl:
@@ -35,6 +37,58 @@ const defaultIcon = L.icon({
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
   shadowSize: [41, 41],
+});
+
+const concluidaIcon = L.divIcon({
+  className: "fluxbus-parada-concluida",
+  html: `
+    <div
+      style="
+        background:#16a34a;
+        color:#fff;
+        border:3px solid #fff;
+        border-radius:50%;
+        width:30px;
+        height:30px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-weight:700;
+        font-size:16px;
+        box-shadow:0 2px 6px rgba(0,0,0,.3);
+      "
+    >
+      ✓
+    </div>
+  `,
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+});
+
+const proximaIcon = L.divIcon({
+  className: "fluxbus-proxima-parada",
+  html: `
+    <div
+      style="
+        background:#2563eb;
+        color:#fff;
+        border:3px solid #fff;
+        border-radius:50%;
+        width:32px;
+        height:32px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-weight:700;
+        font-size:14px;
+        box-shadow:0 2px 6px rgba(0,0,0,.3);
+      "
+    >
+      →
+    </div>
+  `,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
 });
 
 const onibusIcon = L.divIcon({
@@ -74,9 +128,44 @@ function Recenter({ pos }: { pos: Ponto }) {
 }
 
 /*
- * Distância aproximada entre dois pontos.
- * Para descobrir qual trecho da rota está mais próximo
- * do ônibus.
+ * Distância entre duas coordenadas em metros.
+ * Usa a fórmula de Haversine.
+ */
+function distanciaMetros(a: Ponto, b: Ponto) {
+  const R = 6371000;
+
+  const lat1 = (a[0] * Math.PI) / 180;
+  const lat2 = (b[0] * Math.PI) / 180;
+
+  const deltaLat =
+    ((b[0] - a[0]) * Math.PI) / 180;
+
+  const deltaLng =
+    ((b[1] - a[1]) * Math.PI) / 180;
+
+  const sinLat = Math.sin(deltaLat / 2);
+  const sinLng = Math.sin(deltaLng / 2);
+
+  const h =
+    sinLat * sinLat +
+    Math.cos(lat1) *
+      Math.cos(lat2) *
+      sinLng *
+      sinLng;
+
+  return (
+    2 *
+    R *
+    Math.atan2(
+      Math.sqrt(h),
+      Math.sqrt(1 - h)
+    )
+  );
+}
+
+/*
+ * Distância aproximada usada para descobrir
+ * o segmento da rota mais próximo do ônibus.
  */
 function distanciaQuadrada(a: Ponto, b: Ponto) {
   const lat = a[0] - b[0];
@@ -86,8 +175,8 @@ function distanciaQuadrada(a: Ponto, b: Ponto) {
 }
 
 /*
- * Descobre o ponto EXATO de um segmento mais próximo
- * da posição do ônibus.
+ * Encontra o ponto mais próximo do ônibus
+ * em um segmento da rota.
  */
 function pontoMaisProximoNoSegmento(
   ponto: Ponto,
@@ -123,17 +212,14 @@ function pontoMaisProximoNoSegmento(
 }
 
 /*
- * Encontra:
- *
- * - o ponto exato onde o ônibus está na rota;
- * - o índice do segmento correspondente.
+ * Descobre onde o ônibus está na rota.
  */
 function encontrarPosicaoNaRota(
   rota: Ponto[],
   onibus: Ponto
 ) {
   let menorDistancia = Infinity;
-  let melhorPonto: Ponto = rota[0];
+  let melhorPonto = rota[0];
   let melhorSegmento = 0;
 
   for (let i = 0; i < rota.length - 1; i++) {
@@ -143,10 +229,8 @@ function encontrarPosicaoNaRota(
       rota[i + 1]
     );
 
-    const distancia = distanciaQuadrada(
-      onibus,
-      ponto
-    );
+    const distancia =
+      distanciaQuadrada(onibus, ponto);
 
     if (distancia < menorDistancia) {
       menorDistancia = distancia;
@@ -158,7 +242,6 @@ function encontrarPosicaoNaRota(
   return {
     ponto: melhorPonto,
     segmento: melhorSegmento,
-    distancia: menorDistancia,
   };
 }
 
@@ -168,18 +251,27 @@ export default function MapComponent({
   onibusPosicao,
 }: Props) {
   const [rotaRuas, setRotaRuas] = useState<Ponto[]>([]);
-  const [erroRota, setErroRota] = useState<string | null>(null);
+  const [erroRota, setErroRota] = useState<string | null>(
+    null
+  );
 
   /*
-   * Guarda o maior progresso alcançado pelo ônibus.
+   * Índice da próxima parada.
    *
-   * Isso evita que um erro momentâneo do GPS faça
-   * a rota já percorrida reaparecer.
+   * 0 = primeira parada
+   * 1 = segunda parada
+   * 2 = terceira parada
+   */
+  const [proximaParada, setProximaParada] =
+    useState(0);
+
+  /*
+   * Guarda o maior progresso alcançado na rota.
    */
   const maiorSegmentoPercorrido = useRef(0);
 
   /*
-   * Calcula a rota pelas ruas usando OpenRouteService.
+   * Calcula a rota pelas ruas usando ORS.
    */
   useEffect(() => {
     async function buscarRota() {
@@ -188,7 +280,8 @@ export default function MapComponent({
         return;
       }
 
-      const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
+      const apiKey =
+        process.env.NEXT_PUBLIC_ORS_API_KEY;
 
       if (!apiKey) {
         setErroRota(
@@ -200,22 +293,16 @@ export default function MapComponent({
       try {
         setErroRota(null);
 
-        /*
-         * Origem + paradas na ordem definida.
-         */
         const pontos = [
           origem,
-          ...paradas.map((parada) => parada.coords),
+          ...paradas.map(
+            (parada) => parada.coords
+          ),
         ];
 
-        /*
-         * OpenRouteService:
-         * [longitude, latitude]
-         */
-        const coordinates = pontos.map(([lat, lng]) => [
-          lng,
-          lat,
-        ]);
+        const coordinates = pontos.map(
+          ([lat, lng]) => [lng, lat]
+        );
 
         const response = await fetch(
           "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
@@ -245,15 +332,9 @@ export default function MapComponent({
           );
         }
 
-        const geometry = data.features[0].geometry;
+        const geometry =
+          data.features[0].geometry;
 
-        /*
-         * ORS:
-         * [longitude, latitude]
-         *
-         * Leaflet:
-         * [latitude, longitude]
-         */
         const rotaConvertida: Ponto[] =
           geometry.coordinates.map(
             ([lng, lat]: [number, number]) => [
@@ -264,9 +345,6 @@ export default function MapComponent({
 
         setRotaRuas(rotaConvertida);
 
-        /*
-         * Quando a rota muda, reinicia o progresso.
-         */
         maiorSegmentoPercorrido.current = 0;
       } catch (error) {
         console.error(
@@ -288,24 +366,73 @@ export default function MapComponent({
   }, [origem, paradas]);
 
   /*
-   * Calcula automaticamente o restante da rota.
+   * Verifica automaticamente se o ônibus
+   * chegou perto da próxima parada.
    */
-  const rotaRestante = useMemo(() => {
+  useEffect(() => {
     if (
       !onibusPosicao ||
-      rotaRuas.length < 2
+      paradas.length === 0 ||
+      proximaParada >= paradas.length
     ) {
+      return;
+    }
+
+    const paradaAtual =
+      paradas[proximaParada];
+
+    const distancia = distanciaMetros(
+      onibusPosicao,
+      paradaAtual.coords
+    );
+
+    console.log(
+      `Distância até ${paradaAtual.nome}: ${Math.round(
+        distancia
+      )}m`
+    );
+
+    if (
+      distancia <= RAIO_PARADA_METROS
+    ) {
+      console.log(
+        `Parada concluída: ${paradaAtual.nome}`
+      );
+
+      setProximaParada((atual) =>
+        Math.min(
+          atual + 1,
+          paradas.length
+        )
+      );
+    }
+  }, [
+    onibusPosicao,
+    paradas,
+    proximaParada,
+  ]);
+
+  /*
+   * Calcula somente o trecho restante da rota.
+   */
+  const rotaRestante = useMemo(() => {
+    if (rotaRuas.length < 2) {
       return rotaRuas;
     }
 
-    const resultado = encontrarPosicaoNaRota(
-      rotaRuas,
-      onibusPosicao
-    );
+    if (!onibusPosicao) {
+      return rotaRuas;
+    }
+
+    const resultado =
+      encontrarPosicaoNaRota(
+        rotaRuas,
+        onibusPosicao
+      );
 
     /*
-     * Evita que o GPS faça o ônibus voltar
-     * para um trecho que já foi percorrido.
+     * Não deixa o progresso voltar por causa
+     * de uma pequena oscilação do GPS.
      */
     if (
       resultado.segmento >
@@ -315,16 +442,16 @@ export default function MapComponent({
         resultado.segmento;
     }
 
-    const segmentoAtual =
+    const segmento =
       maiorSegmentoPercorrido.current;
 
     /*
-     * Se o ônibus já avançou, começamos
-     * exatamente na posição dele.
+     * Se o ônibus já terminou todas as paradas,
+     * ainda podemos mostrar o restante da rota
+     * até o destino final.
      */
     if (
-      resultado.segmento >=
-      maiorSegmentoPercorrido.current
+      resultado.segmento >= segmento
     ) {
       return [
         resultado.ponto,
@@ -334,18 +461,9 @@ export default function MapComponent({
       ];
     }
 
-    /*
-     * Caso o GPS tenha dado uma pequena
-     * oscilada para trás, mantém a rota
-     * a partir do progresso anterior.
-     */
-    return rotaRuas.slice(segmentoAtual);
+    return rotaRuas.slice(segmento);
   }, [rotaRuas, onibusPosicao]);
 
-  /*
-   * Se existe posição do ônibus, usamos ela.
-   * Caso contrário, usamos a origem.
-   */
   const centroMapa =
     onibusPosicao ?? origem;
 
@@ -365,6 +483,26 @@ export default function MapComponent({
         </div>
       )}
 
+      <div
+        style={{
+          marginBottom: 10,
+          padding: "10px 14px",
+          background: "#eff6ff",
+          borderRadius: 8,
+          color: "#1e3a8a",
+          fontWeight: 600,
+        }}
+      >
+        {proximaParada < paradas.length ? (
+          <>
+            Próxima parada:{" "}
+            {paradas[proximaParada].nome}
+          </>
+        ) : (
+          <>Todas as paradas foram concluídas ✓</>
+        )}
+      </div>
+
       <MapContainer
         center={centroMapa}
         zoom={14}
@@ -380,9 +518,9 @@ export default function MapComponent({
         />
 
         {/*
-         * SOMENTE A PARTE DA ROTA QUE AINDA FALTA
-         */
-        rotaRestante.length > 1 && (
+         * SOMENTE O TRAJETO AINDA NÃO PERCORRIDO
+         */}
+        {rotaRestante.length > 1 && (
           <Polyline
             positions={rotaRestante}
             pathOptions={{
@@ -396,21 +534,41 @@ export default function MapComponent({
         {/*
          * PARADAS
          */}
-        {paradas.map((parada, i) => (
-          <Marker
-            key={`${parada.nome}-${i}`}
-            position={parada.coords}
-            icon={defaultIcon}
-          >
-            <Popup>
-              <strong>
-                Parada {i + 1}
-              </strong>
-              <br />
-              {parada.nome}
-            </Popup>
-          </Marker>
-        ))}
+        {paradas.map((parada, i) => {
+          const concluida =
+            i < proximaParada;
+
+          const proxima =
+            i === proximaParada;
+
+          return (
+            <Marker
+              key={`${parada.nome}-${i}`}
+              position={parada.coords}
+              icon={
+                concluida
+                  ? concluidaIcon
+                  : proxima
+                  ? proximaIcon
+                  : defaultIcon
+              }
+            >
+              <Popup>
+                <strong>
+                  {concluida
+                    ? "✓ Parada concluída"
+                    : proxima
+                    ? "→ Próxima parada"
+                    : `Parada ${i + 1}`}
+                </strong>
+
+                <br />
+
+                {parada.nome}
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {/*
          * ÔNIBUS
@@ -422,6 +580,14 @@ export default function MapComponent({
           >
             <Popup>
               🚌 Ônibus em tempo real
+              <br />
+              Próxima parada:{" "}
+              {proximaParada <
+              paradas.length
+                ? paradas[
+                    proximaParada
+                  ].nome
+                : "Fim da rota"}
             </Popup>
           </Marker>
         )}
