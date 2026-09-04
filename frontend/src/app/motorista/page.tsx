@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
 import { ref, set } from "firebase/database";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
@@ -151,12 +155,76 @@ export default function MotoristaPage() {
   }
 
   // JUSTIFICATIVA
+<<<<<<< HEAD
+=======
+=======
+
+import { ref, set } from "firebase/database";
+
+import { db } from "@/lib/firebase";
+
+import {
+  ROTAS,
+  getBairrosUnicos,
+  getRotaPorBairro,
+} from "@/data/rotas";
+
+import { useViagem } from "@/contexts/ViagemContext";
+
+export default function MotoristaPage() {
+  const router = useRouter();
+
+  const bairros = useMemo(
+    () => getBairrosUnicos(),
+    []
+  );
+
+  const [bairro, setBairro] = useState(
+    bairros[0] ?? ""
+  );
+
+  const rota = useMemo(
+    () =>
+      getRotaPorBairro(bairro) ??
+      ROTAS[0],
+    [bairro]
+  );
+
+  const {
+    viagemAtiva,
+    velocidadeAtual,
+    posicao,
+    ultimaAtualizacao,
+    statusIA,
+    alerta,
+    usuario,
+    iniciarViagem,
+    pararViagem,
+    setAlerta,
+  } = useViagem();
+
+  const [justificativa, setJustificativa] =
+    useState("");
+
+  // Se não estiver logado
+  useEffect(() => {
+    if (usuario === null) {
+      return;
+    }
+  }, [usuario]);
+
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
   async function enviarJustificativa() {
     if (!justificativa.trim()) {
       alert("Digite uma justificativa.");
       return;
     }
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
     try {
       await set(ref(db, `justificativas/${rota.id}/${Date.now()}`), {
         texto: justificativa,
@@ -168,17 +236,69 @@ export default function MotoristaPage() {
       });
 
       alert("Justificativa enviada!");
+<<<<<<< HEAD
+=======
+=======
+    if (!rota) return;
+
+    try {
+      await set(
+        ref(
+          db,
+          `justificativas/${rota.id}/${Date.now()}`
+        ),
+        {
+          texto: justificativa,
+
+          lat: posicao.lat,
+          lng: posicao.lng,
+
+          motorista:
+            usuario?.email ?? "",
+
+          motoristaId:
+            usuario?.uid ?? "",
+
+          criadoEm: Date.now(),
+        }
+      );
+
+      alert("Justificativa enviada!");
+
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
       setJustificativa("");
       setAlerta(false);
     } catch (err) {
       console.error(err);
+<<<<<<< HEAD
       alert("Erro ao enviar justificativa.");
+=======
+<<<<<<< HEAD
+      alert("Erro ao enviar justificativa.");
+=======
+
+      alert(
+        "Erro ao enviar justificativa."
+      );
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
     }
   }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6">
+<<<<<<< HEAD
       <h1 className="text-2xl font-bold">Área do Motorista</h1>
+=======
+<<<<<<< HEAD
+      <h1 className="text-2xl font-bold">Área do Motorista</h1>
+=======
+      <h1 className="text-2xl font-bold">
+        Área do Motorista
+      </h1>
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
 
       <p className="text-sm text-slate-600 mb-4">
         Logado como: {usuario?.email}
@@ -186,6 +306,10 @@ export default function MotoristaPage() {
 
       <div className="mb-4">
         <label>Selecionar rota</label>
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
         <select
           value={bairro}
           disabled={viagemAtiva}
@@ -194,11 +318,33 @@ export default function MotoristaPage() {
         >
           {bairros.map((b) => (
             <option key={b}>{b}</option>
+<<<<<<< HEAD
+=======
+=======
+
+        <select
+          value={bairro}
+          disabled={viagemAtiva}
+          onChange={(e) =>
+            setBairro(e.target.value)
+          }
+          className="w-full border p-2 rounded"
+        >
+          {bairros.map((b) => (
+            <option key={b}>
+              {b}
+            </option>
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
           ))}
         </select>
       </div>
 
       <button
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
         onClick={viagemAtiva ? pararViagem : iniciarViagem}
         className={`w-full p-3 text-white rounded ${
           viagemAtiva ? "bg-red-600" : "bg-blue-600"
@@ -214,20 +360,94 @@ export default function MotoristaPage() {
         <p>IA: {statusIA}</p>
         <p>Última atualização: {ultimaAtualizacao}</p>
         <p>Status: {viagemAtiva ? "Em viagem" : "Parado"}</p>
+<<<<<<< HEAD
+=======
+=======
+        onClick={() =>
+          viagemAtiva
+            ? pararViagem()
+            : iniciarViagem(bairro)
+        }
+        className={`w-full p-3 text-white rounded ${
+          viagemAtiva
+            ? "bg-red-600"
+            : "bg-blue-600"
+        }`}
+      >
+        {viagemAtiva
+          ? "Parar viagem"
+          : "Iniciar viagem"}
+      </button>
+
+      <div className="mt-4 p-4 border rounded">
+        <p>
+          Velocidade:{" "}
+          {velocidadeAtual.toFixed(1)} km/h
+        </p>
+
+        <p>Lat: {posicao.lat}</p>
+
+        <p>Lng: {posicao.lng}</p>
+
+        <p>IA: {statusIA}</p>
+
+        <p>
+          Última atualização:{" "}
+          {ultimaAtualizacao}
+        </p>
+
+        <p>
+          Status:{" "}
+          {viagemAtiva
+            ? "🟢 Em viagem"
+            : "🔴 Parado"}
+        </p>
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
       </div>
 
       {alerta && (
         <div className="mt-4 p-4 bg-red-600 text-white rounded">
+<<<<<<< HEAD
           <p>🚨 Possível desvio detectado</p>
+=======
+<<<<<<< HEAD
+          <p>🚨 Possível desvio detectado</p>
+=======
+          <p>
+            🚨 Possível desvio detectado
+          </p>
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
 
           <textarea
             className="w-full mt-2 p-2 text-black"
             value={justificativa}
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
             onChange={(e) => setJustificativa(e.target.value)}
           />
 
           <button
             onClick={enviarJustificativa}
+<<<<<<< HEAD
+=======
+=======
+            onChange={(e) =>
+              setJustificativa(
+                e.target.value
+              )
+            }
+          />
+
+          <button
+            onClick={
+              enviarJustificativa
+            }
+>>>>>>> origin/main
+>>>>>>> 194703bae2432e480d2807f9c387ef0d6e872ba3
             className="mt-2 bg-white text-red-600 px-4 py-2 rounded"
           >
             Enviar justificativa
