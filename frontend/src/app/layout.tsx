@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import type { Metadata } from "next";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
@@ -21,3 +22,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+=======
+import "./globals.css";
+import { ViagemProvider } from "@/contexts/ViagemContext";
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="pt-BR">
+      <body>
+        <ViagemProvider>
+          {children}
+        </ViagemProvider>
+      </body>
+    </html>
+  );
+}
+>>>>>>> origin/main
