@@ -74,27 +74,20 @@ function AlunoContent() {
   useEffect(() => {
     if (!rotaSelecionada) return;
     setErroORS(null);
-    const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
-    if (!apiKey) {
-      setCarregando(false);
-      setErroORS("Chave do OpenRouteService nao configurada (NEXT_PUBLIC_ORS_API_KEY).");
-      setParadas(rotaSelecionada.paradas.map((p) => ({ ...p, tempo: "-", distancia: "-" })));
-      return;
-    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setCarregando(true);
-      let pontoAtual = origemAtual;
+      let pontoAtual = rotaSelecionada.origem;
       let tempoTotal = 0;
       let distanciaTotal = 0;
       const resultados: ParadaCalc[] = [];
       try {
         for (const parada of rotaSelecionada.paradas) {
           const resp = await fetch(
-            "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
+            "/api/rotas",
             {
               method: "POST",
-              headers: { Authorization: apiKey, "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 coordinates: [
                   [pontoAtual[1], pontoAtual[0]],
@@ -104,7 +97,12 @@ function AlunoContent() {
             },
           );
           const data = await resp.json();
-          if (!resp.ok || !data?.features?.length) continue;
+          if (!resp.ok) {
+            throw new Error(
+              data?.erro ?? `OpenRouteService respondeu ${resp.status}.`
+            );
+          }
+          if (!data?.features?.length) continue;
           const summary = data.features[0].properties.summary;
           tempoTotal += Math.ceil(summary.duration / 60);
           distanciaTotal += summary.distance / 1000;
@@ -119,7 +117,11 @@ function AlunoContent() {
         setParadas(resultados);
       } catch (err) {
         console.error(err);
-        setErroORS("Falha ao consultar OpenRouteService.");
+        setErroORS(
+          err instanceof Error
+            ? err.message
+            : "Falha ao consultar OpenRouteService."
+        );
       } finally {
         setCarregando(false);
       }
@@ -128,7 +130,10 @@ function AlunoContent() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [rotaSelecionada, origemAtual]);
+  // A localização do ônibus atualiza o mapa em tempo real. Os tempos são
+  // recalculados apenas ao escolher uma rota, para não exceder o limite da
+  // API de rotas com uma chamada a cada atualização do GPS.
+  }, [rotaSelecionada]);
 
   if (!rotaSelecionada) return <div className="p-8">Nenhuma rota disponivel.</div>;
 
