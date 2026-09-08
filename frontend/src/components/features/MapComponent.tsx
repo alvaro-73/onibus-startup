@@ -1,7 +1,3 @@
-Sim. Agora ficou claro o que aconteceu: **há blocos ``` dentro do seu `.tsx`**. Esses blocos são Markdown e não podem existir no código TypeScript/JSX. Por isso o compilador chega ao `console.log` e quebra.
-
-Também vou manter a lógica que você queria: **desde o início, a Polyline mostra somente o caminho até a próxima parada e muda quando o ônibus chega nela**.
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -620,3 +616,4 @@ borderRadius: 8,
 
 );
 }
+    
