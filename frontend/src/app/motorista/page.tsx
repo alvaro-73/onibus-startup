@@ -46,7 +46,7 @@ export default function MotoristaPage() {
     return () => unsub();
   }, [router]);
 
-  // IA (MESMA LÓGICA DO CÓDIGO ANTIGO — FIXA E ESTÁVEL)
+  // IA
   async function verificarDesvioIA(lat: number, lng: number) {
     if (consultandoIA) return;
 
@@ -100,10 +100,8 @@ export default function MotoristaPage() {
           setVelocidadeAtual(velocidadeKmH);
           setUltimaAtualizacao(new Date(now).toLocaleTimeString());
 
-          // 🔥 IA FUNCIONANDO (IGUAL AO ANTIGO)
           await verificarDesvioIA(lat, lng);
 
-          // 🔥 FIREBASE (IMPORTANTE: rota.id)
           await set(ref(db, `onibus/${rota.id}`), {
             lat,
             lng,
@@ -186,6 +184,7 @@ export default function MotoristaPage() {
 
       <div className="mb-4">
         <label>Selecionar rota</label>
+
         <select
           value={bairro}
           disabled={viagemAtiva}
@@ -213,7 +212,7 @@ export default function MotoristaPage() {
         <p>Lng: {posicao.lng}</p>
         <p>IA: {statusIA}</p>
         <p>Última atualização: {ultimaAtualizacao}</p>
-        <p>Status: {viagemAtiva ? "Em viagem" : "Parado"}</p>
+        <p>Status: {viagemAtiva ? "🟢 Em viagem" : "🔴 Parado"}</p>
       </div>
 
       {alerta && (
