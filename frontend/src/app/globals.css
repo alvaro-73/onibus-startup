@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --color-fluxbus-blue: #1d4ed8;
+  --color-fluxbus-blue-600: #2563eb;
+  --color-fluxbus-blue-50: #eef4ff;
+  --font-logo: "Kaufmann BT", "Kaufmann Bd BT", "Lucida Handwriting", cursive;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  color: #0f172a;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.logo-fluxbus {
+  font-family: var(--font-logo);
+  color: var(--color-fluxbus-blue);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
