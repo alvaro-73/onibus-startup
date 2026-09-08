@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { ref, set } from "firebase/database";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
-import { ROTAS, getBairrosUnicos, getRotaPorBairro } from "@/data/rotas";
+import {
+  ROTAS,
+  getBairrosUnicos,
+  getRotaPorBairro,
+  getRotaPorId,
+} from "@/data/rotas";
 import { useViagem } from "@/contexts/ViagemContext";
 
 export default function MotoristaPage() {
@@ -13,6 +18,7 @@ export default function MotoristaPage() {
   const bairros = useMemo(() => getBairrosUnicos(), []);
   const {
     viagemAtiva,
+    rotaAtivaId,
     velocidadeAtual,
     posicao,
     ultimaAtualizacao,
@@ -25,6 +31,14 @@ export default function MotoristaPage() {
   } = useViagem();
 
   const [bairro, setBairro] = useState<string>(bairros[0] ?? "");
+
+  // Ao voltar para esta aba, mostra a rota que está realmente em andamento.
+  useEffect(() => {
+    if (!viagemAtiva || !rotaAtivaId) return;
+
+    const rotaAtiva = getRotaPorId(rotaAtivaId);
+    if (rotaAtiva) setBairro(rotaAtiva.bairro);
+  }, [viagemAtiva, rotaAtivaId]);
 
   const rota = useMemo(
     () => getRotaPorBairro(bairro) ?? ROTAS[0],

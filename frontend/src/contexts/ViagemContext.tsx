@@ -21,6 +21,7 @@ type Posicao = {
 
 type ViagemContextType = {
   viagemAtiva: boolean;
+  rotaAtivaId: string | null;
   velocidadeAtual: number;
   posicao: Posicao;
   ultimaAtualizacao: string;
@@ -41,6 +42,8 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
   const [usuario, setUsuario] = useState<User | null>(null);
 
   const [viagemAtiva, setViagemAtiva] = useState(false);
+  const [rotaAtivaId, setRotaAtivaId] = useState<string | null>(null);
+  const viagemAtivaRef = useRef(false);
   const [velocidadeAtual, setVelocidadeAtual] = useState(0);
   const [posicao, setPosicao] = useState<Posicao>({
     lat: 0,
@@ -129,6 +132,8 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
     const id = navigator.geolocation.watchPosition(
       async (position) => {
         try {
+          if (!viagemAtivaRef.current) return;
+
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
 
@@ -152,6 +157,8 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
           verificarDesvioIA(lat, lng);
 
           // FIREBASE
+          if (!viagemAtivaRef.current) return;
+
           await set(ref(db, `onibus/${rotaId}`), {
             lat,
             lng,
@@ -218,7 +225,9 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
     if (!rota) return;
 
     rotaIdRef.current = rota.id;
+    setRotaAtivaId(rota.id);
 
+    viagemAtivaRef.current = true;
     setViagemAtiva(true);
 
     // Guarda no navegador
@@ -228,12 +237,24 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
       rota.id
     );
 
+    // Registra imediatamente que a rota foi iniciada. O marcador só será
+    // exibido para os alunos após a primeira posição real do GPS chegar.
+    void set(ref(db, `onibus/${rota.id}`), {
+      viagemAtiva: true,
+      motoristaId: auth.currentUser?.uid ?? null,
+      motorista: auth.currentUser?.email ?? "",
+    }).catch((err) => {
+      console.error("Erro ao iniciar viagem no Firebase:", err);
+    });
+
     iniciarRastreamento(rota.id);
   }
 
   // PARAR VIAGEM
   async function pararViagem() {
     const rotaId = rotaIdRef.current;
+
+    viagemAtivaRef.current = false;
 
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(
@@ -244,6 +265,7 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
     }
 
     setViagemAtiva(false);
+    setRotaAtivaId(null);
     setVelocidadeAtual(0);
 
     localStorage.removeItem("viagemAtiva");
@@ -282,7 +304,9 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
       watchIdRef.current === null
     ) {
       rotaIdRef.current = rotaId;
+      setRotaAtivaId(rotaId);
 
+      viagemAtivaRef.current = true;
       setViagemAtiva(true);
 
       iniciarRastreamento(rotaId);
@@ -293,6 +317,7 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
     <ViagemContext.Provider
       value={{
         viagemAtiva,
+        rotaAtivaId,
         velocidadeAtual,
         posicao,
         ultimaAtualizacao,
