@@ -35,23 +35,31 @@ function AlunoContent() {
   const [paradas, setParadas] = useState<ParadaCalc[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [mostrarMapa, setMostrarMapa] = useState(false);
-  const [origemAtual, setOrigemAtual] = useState<[number, number]>(rotaSelecionada!.origem);
+  const [onibusPosicao, setOnibusPosicao] = useState<[number, number] | null>(null);
   const [erroORS, setErroORS] = useState<string | null>(null);
+
+  const origemAtual = onibusPosicao ?? rotaSelecionada!.origem;
 
   // Onibus em tempo real (Firebase)
   useEffect(() => {
+    // Não mostra a posição anterior enquanto a nova rota é carregada.
+    setOnibusPosicao(null);
+
     if (!firebaseConfigured || !rotaSelecionada) return;
     const onibusRef = ref(db, `onibus/${rotaSelecionada.id}`);
     const unsub = onValue(onibusRef, (snap) => {
       const data = snap.val();
-      if (data?.lat && data?.lng) setOrigemAtual([data.lat, data.lng]);
+      const temPosicaoValida =
+        typeof data?.lat === "number" &&
+        typeof data?.lng === "number";
+
+      if (data?.viagemAtiva === true && temPosicaoValida) {
+        setOnibusPosicao([data.lat, data.lng]);
+      } else {
+        setOnibusPosicao(null);
+      }
     });
     return () => unsub();
-  }, [rotaSelecionada]);
-
-  // Reset origem ao trocar de bairro
-  useEffect(() => {
-    if (rotaSelecionada) setOrigemAtual(rotaSelecionada.origem);
   }, [rotaSelecionada]);
 
   // Calculo de rotas (ORS) com debounce
@@ -172,7 +180,7 @@ function AlunoContent() {
         <MapComponent
          origem={rotaSelecionada.origem}
          paradas={rotaSelecionada.paradas}
-         onibusPosicao={origemAtual}
+         onibusPosicao={onibusPosicao}
         />
         </div>
       )}
