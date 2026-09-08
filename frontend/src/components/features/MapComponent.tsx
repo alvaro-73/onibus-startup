@@ -215,7 +215,7 @@ rota[i],
 rota[i + 1]
 );
 
-```
+
 const distancia =
   distanciaQuadrada(
     onibus,
@@ -229,7 +229,7 @@ if (
   melhorPonto = ponto;
   melhorSegmento = i;
 }
-```
+
 
 }
 
@@ -298,13 +298,12 @@ inicioIndice,
 destinoIndice - 1
 );
 
-```
+
 inicioTrecho =
   posicaoOnibus.segmento;
 
 pontoInicial =
   posicaoOnibus.ponto;
-```
 
 }
 
@@ -349,11 +348,9 @@ useState(0);
   useEffect(() => {
   let cancelado = false;
 
-```
-async function buscarRota() {
-```
 
-```
+async function buscarRota() {
+
   if (
     !origem ||
     paradas.length === 0
@@ -484,7 +481,7 @@ buscarRota();
 return () => {
   cancelado = true;
 };
-```
+
 
 }, [origem, paradas]);
 
@@ -503,11 +500,9 @@ return () => {
   return;
   }
 
-```
-const paradaAtual =
-```
 
-```
+const paradaAtual =
+
   paradas[proximaParada];
 
 const distancia =
@@ -540,7 +535,7 @@ if (
     )
   );
 }
-```
+
 
 }, [
 onibusPosicao,
@@ -655,7 +650,7 @@ borderRadius: 8,
 {erroRota} </div>
 )}
 
-```
+
   <div
     style={{
       marginBottom: 10,
@@ -786,7 +781,7 @@ borderRadius: 8,
     />
   </MapContainer>
 </div>
-```
+
 
 );
 }
