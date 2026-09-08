@@ -3,15 +3,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ref, set } from "firebase/database";
-import { onAuthStateChanged, User } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import { ROTAS, getBairrosUnicos, getRotaPorBairro } from "@/data/rotas";
+import { useViagem } from "@/contexts/ViagemContext";
 
 export default function MotoristaPage() {
   const router = useRouter();
   const bairros = useMemo(() => getBairrosUnicos(), []);
+  const {
+    viagemAtiva,
+    velocidadeAtual,
+    posicao,
+    ultimaAtualizacao,
+    statusIA,
+    alerta,
+    usuario,
+    iniciarViagem,
+    pararViagem,
+    setAlerta,
+  } = useViagem();
 
-  const [usuario, setUsuario] = useState<User | null>(null);
   const [bairro, setBairro] = useState<string>(bairros[0] ?? "");
 
   const rota = useMemo(
@@ -19,25 +31,13 @@ export default function MotoristaPage() {
     [bairro]
   );
 
-  const [viagemAtiva, setViagemAtiva] = useState(false);
-  const [watchId, setWatchId] = useState<number | null>(null);
-
-  const [velocidadeAtual, setVelocidadeAtual] = useState(0);
-  const [posicao, setPosicao] = useState({ lat: 0, lng: 0 });
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState("-");
-
-  const [statusIA, setStatusIA] = useState("Aguardando IA...");
-  const [alerta, setAlerta] = useState(false);
   const [justificativa, setJustificativa] = useState("");
-  const [consultandoIA, setConsultandoIA] = useState(false);
 
   // AUTH
   useEffect(() => {
     if (!firebaseConfigured) return;
 
     const unsub = onAuthStateChanged(auth, (u) => {
-      setUsuario(u);
-
       if (!u) {
         router.push("/login?next=/motorista");
       }
@@ -45,108 +45,6 @@ export default function MotoristaPage() {
 
     return () => unsub();
   }, [router]);
-
-  // IA
-  async function verificarDesvioIA(lat: number, lng: number) {
-    if (consultandoIA) return;
-
-    const endpoint =
-      process.env.NEXT_PUBLIC_IA_ENDPOINT ||
-      "https://startup-onibus-ia1.onrender.com/prever";
-
-    setConsultandoIA(true);
-
-    try {
-      const resp = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng }),
-      });
-
-      const dados = await resp.json();
-
-      if (dados.alerta) {
-        setAlerta(true);
-        setStatusIA("🚨 Possível desvio detectado");
-      } else {
-        setAlerta(false);
-        setStatusIA("✅ Dentro da rota");
-      }
-    } catch (err) {
-      console.error(err);
-      setStatusIA("⚠️ IA indisponível");
-    } finally {
-      setConsultandoIA(false);
-    }
-  }
-
-  // INICIAR VIAGEM
-  function iniciarViagem() {
-    if (viagemAtiva) return;
-    if (!firebaseConfigured) return;
-
-    setViagemAtiva(true);
-
-    const id = navigator.geolocation.watchPosition(
-      async (position) => {
-        try {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          const velocidade = position.coords.speed ?? 0;
-          const velocidadeKmH = velocidade * 3.6;
-          const now = Date.now();
-
-          setPosicao({ lat, lng });
-          setVelocidadeAtual(velocidadeKmH);
-          setUltimaAtualizacao(new Date(now).toLocaleTimeString());
-
-          await verificarDesvioIA(lat, lng);
-
-          await set(ref(db, `onibus/${rota.id}`), {
-            lat,
-            lng,
-            speed: velocidade,
-            speedKmH: velocidadeKmH,
-            atualizadoEm: now,
-            motoristaId: usuario?.uid ?? null,
-            motorista: usuario?.email ?? "",
-          });
-
-          await set(ref(db, `historico/${rota.id}/${now}`), {
-            lat,
-            lng,
-            speed: velocidade,
-            speedKmH: velocidadeKmH,
-            timestamp: now,
-            rota: rota.id,
-          });
-        } catch (err) {
-          console.error(err);
-        }
-      },
-      (err) => {
-        console.error(err);
-        setStatusIA("⚠️ Erro ao obter localização");
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 5000,
-        timeout: 10000,
-      }
-    );
-
-    setWatchId(id);
-  }
-
-  // PARAR VIAGEM
-  function pararViagem() {
-    setViagemAtiva(false);
-
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
-      setWatchId(null);
-    }
-  }
 
   // JUSTIFICATIVA
   async function enviarJustificativa() {
@@ -198,7 +96,7 @@ export default function MotoristaPage() {
       </div>
 
       <button
-        onClick={viagemAtiva ? pararViagem : iniciarViagem}
+        onClick={viagemAtiva ? pararViagem : () => iniciarViagem(bairro)}
         className={`w-full p-3 text-white rounded ${
           viagemAtiva ? "bg-red-600" : "bg-blue-600"
         }`}
