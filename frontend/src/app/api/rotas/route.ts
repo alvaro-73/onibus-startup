@@ -1,4 +1,3 @@
-```ts
 import { NextResponse } from "next/server";
 
 type Coordenada = [number, number];
@@ -11,7 +10,9 @@ function coordenadasValidas(valor: unknown): valor is Coordenada[] {
       (coordenada) =>
         Array.isArray(coordenada) &&
         coordenada.length === 2 &&
-        coordenada.every((numero) => typeof numero === "number")
+        coordenada.every(
+          (numero) => typeof numero === "number"
+        )
     )
   );
 }
@@ -23,7 +24,9 @@ export async function POST(request: Request) {
 
   if (!apiKey) {
     return NextResponse.json(
-      { erro: "Chave do OpenRouteService não configurada." },
+      {
+        erro: "Chave do OpenRouteService não configurada.",
+      },
       { status: 503 }
     );
   }
@@ -34,14 +37,18 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { erro: "Dados de rota inválidos." },
+      {
+        erro: "Dados de rota inválidos.",
+      },
       { status: 400 }
     );
   }
 
   if (!coordenadasValidas(body.coordinates)) {
     return NextResponse.json(
-      { erro: "Coordenadas de rota inválidas." },
+      {
+        erro: "Coordenadas de rota inválidas.",
+      },
       { status: 400 }
     );
   }
@@ -68,9 +75,10 @@ export async function POST(request: Request) {
     });
   } catch {
     return NextResponse.json(
-      { erro: "Não foi possível conectar ao OpenRouteService." },
+      {
+        erro: "Não foi possível conectar ao OpenRouteService.",
+      },
       { status: 502 }
     );
   }
 }
-```
