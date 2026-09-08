@@ -1,3 +1,4 @@
+```ts
 import { NextResponse } from "next/server";
 
 type Coordenada = [number, number];
@@ -47,20 +48,24 @@ export async function POST(request: Request) {
 
   try {
     const response = await fetch(
-      "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson"
+      "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson",
       {
         method: "POST",
         headers: {
           Authorization: apiKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ coordinates: body.coordinates }),
+        body: JSON.stringify({
+          coordinates: body.coordinates,
+        }),
       }
     );
 
     const data = await response.json();
 
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, {
+      status: response.status,
+    });
   } catch {
     return NextResponse.json(
       { erro: "Não foi possível conectar ao OpenRouteService." },
@@ -68,3 +73,4 @@ export async function POST(request: Request) {
     );
   }
 }
+```
