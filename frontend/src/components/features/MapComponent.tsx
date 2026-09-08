@@ -28,11 +28,12 @@ onibusPosicao?: Ponto | null;
 const RAIO_PARADA_METROS = 50;
 
 const defaultIcon = L.icon({
-iconUrl: "[https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png](https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png)",
+iconUrl:
+"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
 iconRetinaUrl:
-"[https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png](https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png)",
+"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
 shadowUrl:
-"[https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png](https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png)",
+"https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 iconSize: [25, 41],
 iconAnchor: [12, 41],
 popupAnchor: [1, -34],
@@ -246,14 +247,18 @@ let segmentoDestino = destinoRota.segmento;
 let pontoInicial = inicioRota.ponto;
 
 if (onibus) {
-const posicaoOnibus = encontrarPosicaoNaRota(
+const posicaoOnibus =
+encontrarPosicaoNaRota(
 rota,
 onibus
 );
 
 ```
-segmentoInicio = posicaoOnibus.segmento;
-pontoInicial = posicaoOnibus.ponto;
+segmentoInicio =
+  posicaoOnibus.segmento;
+
+pontoInicial =
+  posicaoOnibus.ponto;
 ```
 
 }
@@ -272,11 +277,15 @@ i++
 trecho.push(rota[i]);
 }
 
-const ultimo = trecho[trecho.length - 1];
+const ultimo =
+trecho[trecho.length - 1];
 
 if (
 !ultimo ||
-distanciaQuadrada(ultimo, destino) > 0.00000001
+distanciaQuadrada(
+ultimo,
+destino
+) > 0.00000001
 ) {
 trecho.push(destino);
 }
@@ -289,10 +298,11 @@ origem,
 paradas,
 onibusPosicao,
 }: Props) {
-const [rotaRuas, setRotaRuas] = useState<Ponto[]>([]);
-const [erroRota, setErroRota] = useState<string | null>(
-null
-);
+const [rotaRuas, setRotaRuas] =
+useState<Ponto[]>([]);
+
+const [erroRota, setErroRota] =
+useState<string | null>(null);
 
 const [proximaParada, setProximaParada] =
 useState(0);
@@ -302,7 +312,10 @@ let cancelado = false;
 
 ```
 async function buscarRota() {
-  if (!origem || paradas.length === 0) {
+  if (
+    !origem ||
+    paradas.length === 0
+  ) {
     setRotaRuas([]);
     return;
   }
@@ -326,7 +339,8 @@ async function buscarRota() {
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type":
+            "application/json",
         },
         body: JSON.stringify({
           coordinates,
@@ -334,14 +348,18 @@ async function buscarRota() {
       }
     );
 
-    const data = await response.json();
+    const data =
+      await response.json();
 
     if (
       !response.ok ||
       !data?.features ||
       data.features.length === 0
     ) {
-      console.error("Resposta ORS:", data);
+      console.error(
+        "Resposta ORS:",
+        data
+      );
 
       throw new Error(
         "Não foi possível encontrar a rota."
@@ -353,14 +371,16 @@ async function buscarRota() {
 
     const rotaConvertida: Ponto[] =
       geometry.coordinates.map(
-        ([lng, lat]: [number, number]) => [
-          lat,
-          lng,
-        ]
+        ([lng, lat]: [
+          number,
+          number
+        ]) => [lat, lng]
       );
 
     if (!cancelado) {
-      setRotaRuas(rotaConvertida);
+      setRotaRuas(
+        rotaConvertida
+      );
     }
   } catch (error) {
     console.error(
@@ -393,7 +413,8 @@ useEffect(() => {
 if (
 !onibusPosicao ||
 paradas.length === 0 ||
-proximaParada >= paradas.length
+proximaParada >=
+paradas.length
 ) {
 return;
 }
@@ -402,10 +423,11 @@ return;
 const paradaAtual =
   paradas[proximaParada];
 
-const distancia = distanciaMetros(
-  onibusPosicao,
-  paradaAtual.coords
-);
+const distancia =
+  distanciaMetros(
+    onibusPosicao,
+    paradaAtual.coords
+  );
 
 console.log(
   `Distância até ${paradaAtual.nome}: ${Math.round(
@@ -414,7 +436,8 @@ console.log(
 );
 
 if (
-  distancia <= RAIO_PARADA_METROS
+  distancia <=
+  RAIO_PARADA_METROS
 ) {
   console.log(
     `Parada concluída: ${paradaAtual.nome}`
@@ -435,41 +458,48 @@ paradas,
 proximaParada,
 ]);
 
-const rotaProximaParada = useMemo(() => {
+const rotaProximaParada =
+useMemo(() => {
 if (
-proximaParada >= paradas.length
+proximaParada >=
+paradas.length
 ) {
 return [];
 }
 
 ```
-const destino =
-  paradas[proximaParada].coords;
+  const destino =
+    paradas[
+      proximaParada
+    ].coords;
 
-let inicio = origem;
+  let inicio = origem;
 
-if (onibusPosicao) {
-  inicio = onibusPosicao;
-} else if (proximaParada > 0) {
-  inicio =
-    paradas[proximaParada - 1].coords;
-}
+  if (onibusPosicao) {
+    inicio = onibusPosicao;
+  } else if (
+    proximaParada > 0
+  ) {
+    inicio =
+      paradas[
+        proximaParada - 1
+      ].coords;
+  }
 
-return encontrarTrechoProximaParada(
-  rotaRuas,
-  inicio,
-  destino,
-  onibusPosicao
-);
-```
-
+  return encontrarTrechoProximaParada(
+    rotaRuas,
+    inicio,
+    destino,
+    onibusPosicao
+  );
 }, [
-rotaRuas,
-origem,
-paradas,
-proximaParada,
-onibusPosicao,
+  rotaRuas,
+  origem,
+  paradas,
+  proximaParada,
+  onibusPosicao,
 ]);
+```
 
 const onibusPosicaoExibida =
 useMemo<Ponto | null>(() => {
@@ -478,7 +508,9 @@ return null;
 }
 
 ```
-  if (rotaRuas.length < 2) {
+  if (
+    rotaRuas.length < 2
+  ) {
     return onibusPosicao;
   }
 
@@ -493,7 +525,8 @@ return null;
 ```
 
 const centroMapa =
-onibusPosicaoExibida ?? origem;
+onibusPosicaoExibida ??
+origem;
 
 return ( <div>
 {erroRota && (
@@ -520,13 +553,21 @@ borderRadius: 8,
       fontWeight: 600,
     }}
   >
-    {proximaParada < paradas.length ? (
+    {proximaParada <
+    paradas.length ? (
       <>
         Próxima parada:{" "}
-        {paradas[proximaParada].nome}
+        {
+          paradas[
+            proximaParada
+          ].nome
+        }
       </>
     ) : (
-      <>Todas as paradas foram concluídas ✓</>
+      <>
+        Todas as paradas foram
+        concluídas ✓
+      </>
     )}
   </div>
 
@@ -544,9 +585,12 @@ borderRadius: 8,
       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
     />
 
-    {rotaProximaParada.length > 1 && (
+    {rotaProximaParada.length >
+      1 && (
       <Polyline
-        positions={rotaProximaParada}
+        positions={
+          rotaProximaParada
+        }
         pathOptions={{
           color: "#2563eb",
           weight: 5,
@@ -555,52 +599,61 @@ borderRadius: 8,
       />
     )}
 
-    {paradas.map((parada, i) => {
-      const concluida =
-        i < proximaParada;
+    {paradas.map(
+      (parada, i) => {
+        const concluida =
+          i < proximaParada;
 
-      const proxima =
-        i === proximaParada;
+        const proxima =
+          i === proximaParada;
 
-      return (
-        <Marker
-          key={`${parada.nome}-${i}`}
-          position={parada.coords}
-          icon={
-            concluida
-              ? concluidaIcon
-              : proxima
-              ? proximaIcon
-              : defaultIcon
-          }
-        >
-          <Popup>
-            <strong>
-              {concluida
-                ? "✓ Parada concluída"
+        return (
+          <Marker
+            key={`${parada.nome}-${i}`}
+            position={
+              parada.coords
+            }
+            icon={
+              concluida
+                ? concluidaIcon
                 : proxima
-                ? "→ Próxima parada"
-                : `Parada ${i + 1}`}
-            </strong>
+                ? proximaIcon
+                : defaultIcon
+            }
+          >
+            <Popup>
+              <strong>
+                {concluida
+                  ? "✓ Parada concluída"
+                  : proxima
+                  ? "→ Próxima parada"
+                  : `Parada ${
+                      i + 1
+                    }`}
+              </strong>
 
-            <br />
+              <br />
 
-            {parada.nome}
-          </Popup>
-        </Marker>
-      );
-    })}
+              {parada.nome}
+            </Popup>
+          </Marker>
+        );
+      }
+    )}
 
     {onibusPosicaoExibida && (
       <Marker
-        position={onibusPosicaoExibida}
+        position={
+          onibusPosicaoExibida
+        }
         icon={onibusIcon}
       >
         <Popup>
           🚌 Ônibus em tempo real
           <br />
           Próxima parada:{" "}
-          {proximaParada < paradas.length
+          {proximaParada <
+          paradas.length
             ? paradas[
                 proximaParada
               ].nome
@@ -609,11 +662,12 @@ borderRadius: 8,
       </Marker>
     )}
 
-    <Recenter pos={centroMapa} />
+    <Recenter
+      pos={centroMapa}
+    />
   </MapContainer>
 </div>
 ```
 
 );
 }
-    
