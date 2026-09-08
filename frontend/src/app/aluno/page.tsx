@@ -49,15 +49,19 @@ function AlunoContent() {
     const onibusRef = ref(db, `onibus/${rotaSelecionada.id}`);
     const unsub = onValue(onibusRef, (snap) => {
       const data = snap.val();
+      const lat = Number(data?.lat);
+      const lng = Number(data?.lng);
       const temPosicaoValida =
-        typeof data?.lat === "number" &&
-        typeof data?.lng === "number";
+        data?.lat != null &&
+        data?.lng != null &&
+        Number.isFinite(lat) &&
+        Number.isFinite(lng);
 
       // A posição é publicada pelo GPS enquanto a viagem está ativa. O
       // estado `false` é mantido somente por compatibilidade com registros
       // antigos; ao encerrar, o motorista remove o registro por completo.
       if (data?.viagemAtiva !== false && temPosicaoValida) {
-        setOnibusPosicao([data.lat, data.lng]);
+        setOnibusPosicao([lat, lng]);
       } else {
         setOnibusPosicao(null);
       }

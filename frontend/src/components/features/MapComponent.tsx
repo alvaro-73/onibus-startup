@@ -270,6 +270,13 @@ export default function MapComponent({
    */
   const maiorSegmentoPercorrido = useRef(0);
 
+  // Mantém um caminho visível mesmo quando o serviço de rotas não estiver
+  // configurado ou temporariamente indisponível.
+  const rotaBase = useMemo<Ponto[]>(
+    () => [origem, ...paradas.map((parada) => parada.coords)],
+    [origem, paradas]
+  );
+
   /*
    * Calcula a rota pelas ruas usando ORS.
    */
@@ -417,7 +424,7 @@ export default function MapComponent({
    */
   const rotaRestante = useMemo(() => {
     if (rotaRuas.length < 2) {
-      return rotaRuas;
+      return rotaBase;
     }
 
     if (!onibusPosicao) {
@@ -462,7 +469,7 @@ export default function MapComponent({
     }
 
     return rotaRuas.slice(segmento);
-  }, [rotaRuas, onibusPosicao]);
+  }, [rotaRuas, rotaBase, onibusPosicao]);
 
   const centroMapa =
     onibusPosicao ?? origem;
