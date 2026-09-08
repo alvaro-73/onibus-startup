@@ -171,6 +171,7 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
             motorista: auth.currentUser?.email ?? "",
 
             viagemAtiva: true,
+            aguardandoGps: false,
           });
 
           // HISTÓRICO
@@ -237,10 +238,14 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
       rota.id
     );
 
-    // Registra imediatamente que a rota foi iniciada. O marcador só será
-    // exibido para os alunos após a primeira posição real do GPS chegar.
+    // Exibe o ônibus imediatamente na origem da rota. A primeira posição do
+    // GPS substitui esse ponto inicial assim que estiver disponível.
     void set(ref(db, `onibus/${rota.id}`), {
+      lat: rota.origem[0],
+      lng: rota.origem[1],
       viagemAtiva: true,
+      aguardandoGps: true,
+      atualizadoEm: Date.now(),
       motoristaId: auth.currentUser?.uid ?? null,
       motorista: auth.currentUser?.email ?? "",
     }).catch((err) => {
