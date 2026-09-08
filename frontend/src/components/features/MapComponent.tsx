@@ -251,6 +251,8 @@ export default function MapComponent({
   onibusPosicao,
 }: Props) {
   const [rotaRuas, setRotaRuas] = useState<Ponto[]>([]);
+  const [onibusPosicaoExibida, setOnibusPosicaoExibida] =
+    useState<Ponto | null>(null);
   const [erroRota, setErroRota] = useState<string | null>(
     null
   );
@@ -276,6 +278,68 @@ export default function MapComponent({
     () => [origem, ...paradas.map((parada) => parada.coords)],
     [origem, paradas]
   );
+
+  /*
+   * O GPS pode posicionar o aparelho alguns metros dentro de uma casa. Para
+   * o mapa, usamos a rua dirigível mais próxima, mas mantemos a coordenada
+   * original no Firebase como a posição real enviada pelo dispositivo.
+   */
+  useEffect(() => {
+    if (!onibusPosicao) {
+      setOnibusPosicaoExibida(null);
+      return;
+    }
+
+    const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
+    if (!apiKey) {
+      setOnibusPosicaoExibida(onibusPosicao);
+      return;
+    }
+
+    let cancelado = false;
+    setOnibusPosicaoExibida(onibusPosicao);
+
+    async function ajustarParaRua() {
+      try {
+        const response = await fetch(
+          "https://api.openrouteservice.org/v2/snap/driving-car/json",
+          {
+            method: "POST",
+            headers: {
+              Authorization: apiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              locations: [[onibusPosicao[1], onibusPosicao[0]]],
+              radius: 120,
+            }),
+          }
+        );
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const location = data?.locations?.[0]?.location;
+        const [lng, lat] = Array.isArray(location) ? location : [];
+
+        if (
+          !cancelado &&
+          Number.isFinite(lat) &&
+          Number.isFinite(lng)
+        ) {
+          setOnibusPosicaoExibida([lat, lng]);
+        }
+      } catch {
+        // Sem resposta do serviço, preserva a localização exata do GPS.
+      }
+    }
+
+    void ajustarParaRua();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [onibusPosicao]);
 
   /*
    * Calcula a rota pelas ruas usando ORS.
@@ -472,7 +536,7 @@ export default function MapComponent({
   }, [rotaRuas, rotaBase, onibusPosicao]);
 
   const centroMapa =
-    onibusPosicao ?? origem;
+    onibusPosicaoExibida ?? origem;
 
   return (
     <div>
@@ -580,9 +644,9 @@ export default function MapComponent({
         {/*
          * ÔNIBUS
          */}
-        {onibusPosicao && (
+        {onibusPosicaoExibida && (
           <Marker
-            position={onibusPosicao}
+            position={onibusPosicaoExibida}
             icon={onibusIcon}
           >
             <Popup>
