@@ -187,20 +187,31 @@ x1 + t * dx,
 
 function encontrarPosicaoNaRota(
 rota: Ponto[],
-onibus: Ponto
+onibus: Ponto,
+inicioIndice = 0,
+fimIndice = rota.length - 1
 ) {
 let menorDistancia = Infinity;
-let melhorPonto = rota[0];
-let melhorSegmento = 0;
+let melhorPonto = rota[inicioIndice];
+let melhorSegmento = inicioIndice;
 
-for (let i = 0; i < rota.length - 1; i++) {
+const limite = Math.min(
+fimIndice,
+rota.length - 1
+);
+
+for (
+let i = inicioIndice;
+i < limite;
+i++
+) {
 const ponto = pontoMaisProximoNoSegmento(
 onibus,
 rota[i],
 rota[i + 1]
 );
 
-
+```
 const distancia = distanciaQuadrada(
   onibus,
   ponto
@@ -211,7 +222,7 @@ if (distancia < menorDistancia) {
   melhorPonto = ponto;
   melhorSegmento = i;
 }
-
+```
 
 }
 
@@ -223,73 +234,67 @@ segmento: melhorSegmento,
 
 function encontrarTrechoProximaParada(
 rota: Ponto[],
-inicio: Ponto,
-destino: Ponto,
+wayPoints: number[],
+indiceParada: number,
 onibus?: Ponto | null
 ): Ponto[] {
-if (rota.length < 2) {
-return [inicio, destino];
+if (
+rota.length < 2 ||
+wayPoints.length < 2
+) {
+return [];
 }
 
-const inicioRota = encontrarPosicaoNaRota(
-rota,
-inicio
-);
+const inicioIndice =
+wayPoints[indiceParada] ?? 0;
 
-const destinoRota = encontrarPosicaoNaRota(
-rota,
-destino
-);
+const destinoIndice =
+wayPoints[indiceParada + 1] ??
+rota.length - 1;
 
-let segmentoInicio = inicioRota.segmento;
-let segmentoDestino = destinoRota.segmento;
+if (
+inicioIndice >= destinoIndice ||
+inicioIndice >= rota.length
+) {
+return [];
+}
 
-let pontoInicial = inicioRota.ponto;
+let trechoInicio = inicioIndice;
 
 if (onibus) {
 const posicaoOnibus =
 encontrarPosicaoNaRota(
 rota,
-onibus
+onibus,
+inicioIndice,
+destinoIndice
 );
 
-
-segmentoInicio =
+```
+trechoInicio =
   posicaoOnibus.segmento;
 
-pontoInicial =
-  posicaoOnibus.ponto;
-
-}
-
-if (segmentoDestino < segmentoInicio) {
-segmentoDestino = segmentoInicio;
-}
-
-const trecho: Ponto[] = [pontoInicial];
+const trecho: Ponto[] = [
+  posicaoOnibus.ponto,
+];
 
 for (
-let i = segmentoInicio + 1;
-i <= segmentoDestino;
-i++
+  let i = trechoInicio + 1;
+  i <= destinoIndice;
+  i++
 ) {
-trecho.push(rota[i]);
-}
-
-const ultimo =
-trecho[trecho.length - 1];
-
-if (
-!ultimo ||
-distanciaQuadrada(
-ultimo,
-destino
-) > 0.00000001
-) {
-trecho.push(destino);
+  trecho.push(rota[i]);
 }
 
 return trecho;
+```
+
+}
+
+return rota.slice(
+inicioIndice,
+destinoIndice + 1
+);
 }
 
 export default function MapComponent({
@@ -300,6 +305,9 @@ onibusPosicao,
 const [rotaRuas, setRotaRuas] =
 useState<Ponto[]>([]);
 
+const [wayPoints, setWayPoints] =
+useState<number[]>([]);
+
 const [erroRota, setErroRota] =
 useState<string | null>(null);
 
@@ -309,12 +317,14 @@ useState(0);
 useEffect(() => {
 let cancelado = false;
 
+```
 async function buscarRota() {
   if (
     !origem ||
     paradas.length === 0
   ) {
     setRotaRuas([]);
+    setWayPoints([]);
     return;
   }
 
@@ -364,8 +374,11 @@ async function buscarRota() {
       );
     }
 
+    const feature =
+      data.features[0];
+
     const geometry =
-      data.features[0].geometry;
+      feature.geometry;
 
     const rotaConvertida: Ponto[] =
       geometry.coordinates.map(
@@ -375,10 +388,29 @@ async function buscarRota() {
         ]) => [lat, lng]
       );
 
+    const pontosRota =
+      feature.properties?.way_points;
+
+    if (
+      !Array.isArray(pontosRota) ||
+      pontosRota.length !==
+        pontos.length
+    ) {
+      throw new Error(
+        "A rota não retornou os pontos necessários."
+      );
+    }
+
     if (!cancelado) {
       setRotaRuas(
         rotaConvertida
       );
+
+      setWayPoints(
+        pontosRota
+      );
+
+      setProximaParada(0);
     }
   } catch (error) {
     console.error(
@@ -394,6 +426,7 @@ async function buscarRota() {
       );
 
       setRotaRuas([]);
+      setWayPoints([]);
     }
   }
 }
@@ -403,6 +436,7 @@ buscarRota();
 return () => {
   cancelado = true;
 };
+```
 
 }, [origem, paradas]);
 
@@ -416,7 +450,7 @@ paradas.length
 return;
 }
 
-
+```
 const paradaAtual =
   paradas[proximaParada];
 
@@ -447,6 +481,7 @@ if (
     )
   );
 }
+```
 
 }, [
 onibusPosicao,
@@ -458,43 +493,29 @@ const rotaProximaParada =
 useMemo(() => {
 if (
 proximaParada >=
-paradas.length
+paradas.length ||
+rotaRuas.length < 2 ||
+wayPoints.length <
+paradas.length + 1
 ) {
 return [];
 }
 
-  const destino =
-    paradas[
-      proximaParada
-    ].coords;
-
-  let inicio = origem;
-
-  if (onibusPosicao) {
-    inicio = onibusPosicao;
-  } else if (
-    proximaParada > 0
-  ) {
-    inicio =
-      paradas[
-        proximaParada - 1
-      ].coords;
-  }
-
+```
   return encontrarTrechoProximaParada(
     rotaRuas,
-    inicio,
-    destino,
+    wayPoints,
+    proximaParada,
     onibusPosicao
   );
 }, [
   rotaRuas,
-  origem,
-  paradas,
+  wayPoints,
+  paradas.length,
   proximaParada,
   onibusPosicao,
 ]);
-
+```
 
 const onibusPosicaoExibida =
 useMemo<Ponto | null>(() => {
@@ -502,22 +523,44 @@ if (!onibusPosicao) {
 return null;
 }
 
-
+```
   if (
-    rotaRuas.length < 2
+    rotaRuas.length < 2 ||
+    wayPoints.length <
+      paradas.length + 1
   ) {
     return onibusPosicao;
   }
 
+  if (
+    proximaParada >=
+    paradas.length
+  ) {
+    return onibusPosicao;
+  }
+
+  const inicioIndice =
+    wayPoints[proximaParada] ?? 0;
+
+  const destinoIndice =
+    wayPoints[
+      proximaParada + 1
+    ] ?? rotaRuas.length - 1;
+
   return encontrarPosicaoNaRota(
     rotaRuas,
-    onibusPosicao
+    onibusPosicao,
+    inicioIndice,
+    destinoIndice
   ).ponto;
 }, [
   rotaRuas,
+  wayPoints,
+  paradas.length,
+  proximaParada,
   onibusPosicao,
 ]);
-
+```
 
 const centroMapa =
 onibusPosicaoExibida ??
@@ -537,7 +580,7 @@ borderRadius: 8,
 {erroRota} </div>
 )}
 
-
+```
   <div
     style={{
       marginBottom: 10,
@@ -663,5 +706,7 @@ borderRadius: 8,
     />
   </MapContainer>
 </div>
+```
+
 );
 }
