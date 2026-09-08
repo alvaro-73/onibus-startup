@@ -1,3 +1,4 @@
+```tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -137,11 +138,8 @@ function distanciaMetros(a: Ponto, b: Ponto) {
   const lat1 = (a[0] * Math.PI) / 180;
   const lat2 = (b[0] * Math.PI) / 180;
 
-  const deltaLat =
-    ((b[0] - a[0]) * Math.PI) / 180;
-
-  const deltaLng =
-    ((b[1] - a[1]) * Math.PI) / 180;
+  const deltaLat = ((b[0] - a[0]) * Math.PI) / 180;
+  const deltaLng = ((b[1] - a[1]) * Math.PI) / 180;
 
   const sinLat = Math.sin(deltaLat / 2);
   const sinLng = Math.sin(deltaLng / 2);
@@ -229,8 +227,10 @@ function encontrarPosicaoNaRota(
       rota[i + 1]
     );
 
-    const distancia =
-      distanciaQuadrada(onibus, ponto);
+    const distancia = distanciaQuadrada(
+      onibus,
+      ponto
+    );
 
     if (distancia < menorDistancia) {
       menorDistancia = distancia;
@@ -245,6 +245,103 @@ function encontrarPosicaoNaRota(
   };
 }
 
+/*
+ * Encontra o trecho da rota que corresponde
+ * à próxima parada.
+ *
+ * O trecho é:
+ *
+ * início → parada 1
+ * parada 1 → parada 2
+ * parada 2 → parada 3
+ * ...
+ */
+function encontrarTrechoProximaParada(
+  rota: Ponto[],
+  inicio: Ponto,
+  destino: Ponto,
+  onibus?: Ponto | null
+): Ponto[] {
+  if (rota.length < 2) {
+    return [inicio, destino];
+  }
+
+  /*
+   * Encontra o ponto da rota mais próximo
+   * do início do trecho.
+   */
+  const inicioRota = encontrarPosicaoNaRota(
+    rota,
+    inicio
+  );
+
+  /*
+   * Encontra o ponto da rota mais próximo
+   * da parada de destino.
+   */
+  const destinoRota = encontrarPosicaoNaRota(
+    rota,
+    destino
+  );
+
+  let segmentoInicio = inicioRota.segmento;
+  let segmentoDestino = destinoRota.segmento;
+
+  /*
+   * Se temos a posição real do ônibus,
+   * começamos o desenho exatamente de onde
+   * o ônibus está na rua.
+   */
+  let pontoInicial = inicioRota.ponto;
+
+  if (onibus) {
+    const posicaoOnibus = encontrarPosicaoNaRota(
+      rota,
+      onibus
+    );
+
+    segmentoInicio = posicaoOnibus.segmento;
+    pontoInicial = posicaoOnibus.ponto;
+  }
+
+  /*
+   * Garante que o destino esteja depois
+   * do ponto inicial.
+   */
+  if (segmentoDestino < segmentoInicio) {
+    segmentoDestino = segmentoInicio;
+  }
+
+  const trecho: Ponto[] = [pontoInicial];
+
+  /*
+   * Adiciona os pontos da rota somente até
+   * a próxima parada.
+   */
+  for (
+    let i = segmentoInicio + 1;
+    i <= segmentoDestino;
+    i++
+  ) {
+    trecho.push(rota[i]);
+  }
+
+  /*
+   * Garante que a própria coordenada da parada
+   * seja o último ponto do Polyline.
+   */
+  const ultimo = trecho[trecho.length - 1];
+
+  if (
+    !ultimo ||
+    distanciaQuadrada(ultimo, destino) > 0.00000001
+  ) {
+    trecho.push(destino);
+  }
+
+  return trecho;
+}
+
 export default function MapComponent({
   origem,
   paradas,
@@ -257,7 +354,7 @@ export default function MapComponent({
 
   /*
    * Índice da próxima parada.
-   *
+
    * 0 = primeira parada
    * 1 = segunda parada
    * 2 = terceira parada
@@ -266,19 +363,10 @@ export default function MapComponent({
     useState(0);
 
   /*
-   * Guarda o maior progresso alcançado na rota.
-   */
-  const maiorSegmentoPercorrido = useRef(0);
-
-  // Mantém um caminho visível mesmo quando o serviço de rotas não estiver
-  // configurado ou temporariamente indisponível.
-  const rotaBase = useMemo<Ponto[]>(
-    () => [origem, ...paradas.map((parada) => parada.coords)],
-    [origem, paradas]
-  );
-
-  /*
-   * Calcula a rota pelas ruas usando ORS.
+   * Calcula a rota completa pelas ruas.
+   *
+   * Ela é usada somente como referência para
+   * encontrar o trecho correto.
    */
   useEffect(() => {
     async function buscarRota() {
@@ -340,8 +428,6 @@ export default function MapComponent({
           );
 
         setRotaRuas(rotaConvertida);
-
-        maiorSegmentoPercorrido.current = 0;
       } catch (error) {
         console.error(
           "Erro ao calcular rota:",
@@ -409,68 +495,86 @@ export default function MapComponent({
   ]);
 
   /*
-   * Calcula somente o trecho restante da rota.
+   * MOSTRA SOMENTE O CAMINHO ATÉ A PRÓXIMA PARADA.
+   *
+   * Exemplos:
+   *
+   * início → parada 1
+   * parada 1 → parada 2
+   * parada 2 → parada 3
+   *
+   * Nunca mostra os próximos trechos.
    */
-  const rotaRestante = useMemo(() => {
-    if (rotaRuas.length < 2) {
-      return rotaBase;
+  const rotaProximaParada = useMemo(() => {
+    /*
+     * Todas as paradas concluídas.
+     */
+    if (
+      proximaParada >= paradas.length
+    ) {
+      return [];
     }
 
-    if (!onibusPosicao) {
-      return rotaRuas;
+    const destino =
+      paradas[proximaParada].coords;
+
+    /*
+     * O início do trecho é:
+     *
+     * - a posição do ônibus, se ele já estiver
+     *   em movimento;
+     * - a origem, se ainda não houver posição GPS.
+     *
+     * Depois que uma parada é concluída,
+     * o próprio índice da próxima parada muda
+     * e o destino passa a ser a próxima.
+     */
+    let inicio = origem;
+
+    if (onibusPosicao) {
+      inicio = onibusPosicao;
+    } else if (proximaParada > 0) {
+      inicio =
+        paradas[proximaParada - 1].coords;
     }
 
-    const resultado =
-      encontrarPosicaoNaRota(
+    return encontrarTrechoProximaParada(
+      rotaRuas,
+      inicio,
+      destino,
+      onibusPosicao
+    );
+  }, [
+    rotaRuas,
+    origem,
+    paradas,
+    proximaParada,
+    onibusPosicao,
+  ]);
+
+  /*
+   * Posiciona o ícone do ônibus no ponto mais
+   * próximo da rua.
+   */
+  const onibusPosicaoExibida =
+    useMemo<Ponto | null>(() => {
+      if (!onibusPosicao) return null;
+
+      if (rotaRuas.length < 2) {
+        return onibusPosicao;
+      }
+
+      return encontrarPosicaoNaRota(
         rotaRuas,
         onibusPosicao
-      );
+      ).ponto;
+    }, [
+      rotaRuas,
+      onibusPosicao,
+    ]);
 
-    /*
-     * Não deixa o progresso voltar por causa
-     * de uma pequena oscilação do GPS.
-     */
-    if (
-      resultado.segmento >
-      maiorSegmentoPercorrido.current
-    ) {
-      maiorSegmentoPercorrido.current =
-        resultado.segmento;
-    }
-
-    const segmento =
-      maiorSegmentoPercorrido.current;
-
-    /*
-     * Se o ônibus já terminou todas as paradas,
-     * ainda podemos mostrar o restante da rota
-     * até o destino final.
-     */
-    if (
-      resultado.segmento >= segmento
-    ) {
-      return [
-        resultado.ponto,
-        ...rotaRuas.slice(
-          resultado.segmento + 1
-        ),
-      ];
-    }
-
-    return rotaRuas.slice(segmento);
-  }, [rotaRuas, rotaBase, onibusPosicao]);
-
-  // Se a rota pelas ruas estiver disponível, posiciona o ícone no ponto
-  // mais próximo dela. Isso evita mostrar o ônibus dentro de uma residência
-  // sem fazer uma nova consulta externa a cada atualização do GPS.
-  const onibusPosicaoExibida = useMemo<Ponto | null>(() => {
-    if (!onibusPosicao) return null;
-    if (rotaRuas.length < 2) return onibusPosicao;
-
-    return encontrarPosicaoNaRota(rotaRuas, onibusPosicao).ponto;
-  }, [rotaRuas, onibusPosicao]);
-
-  const centroMapa = onibusPosicaoExibida ?? origem;
+  const centroMapa =
+    onibusPosicaoExibida ?? origem;
 
   return (
     <div>
@@ -523,11 +627,19 @@ export default function MapComponent({
         />
 
         {/*
-         * SOMENTE O TRAJETO AINDA NÃO PERCORRIDO
+         * SOMENTE O TRECHO DA PRÓXIMA PARADA.
+         *
+         * Nunca desenha:
+         *
+         * parada atual → próxima → próxima → próxima
+         *
+         * Desenha somente:
+         *
+         * ônibus → próxima parada
          */}
-        {rotaRestante.length > 1 && (
+        {rotaProximaParada.length > 1 && (
           <Polyline
-            positions={rotaRestante}
+            positions={rotaProximaParada}
             pathOptions={{
               color: "#2563eb",
               weight: 5,
@@ -602,3 +714,4 @@ export default function MapComponent({
     </div>
   );
 }
+```
