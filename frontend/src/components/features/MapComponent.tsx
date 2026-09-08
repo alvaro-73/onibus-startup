@@ -296,6 +296,7 @@ export default function MapComponent({
       return;
     }
 
+    const chaveORS = apiKey;
     let cancelado = false;
     setOnibusPosicaoExibida(onibusPosicao);
 
@@ -306,7 +307,7 @@ export default function MapComponent({
           {
             method: "POST",
             headers: {
-              Authorization: apiKey,
+              Authorization: chaveORS,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
