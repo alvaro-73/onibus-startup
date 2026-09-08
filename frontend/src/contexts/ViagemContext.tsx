@@ -9,7 +9,7 @@ import {
   ReactNode,
 } from "react";
 
-import { ref, set } from "firebase/database";
+import { ref, remove, set } from "firebase/database";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import { ROTAS, getRotaPorBairro } from "@/data/rotas";
@@ -273,13 +273,12 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
 
     if (rotaId && firebaseConfigured) {
       try {
-        await set(
-          ref(db, `onibus/${rotaId}/viagemAtiva`),
-          false
-        );
+        // Remove a última localização ao encerrar. Assim, nenhuma posição
+        // antiga pode continuar aparecendo para os alunos.
+        await remove(ref(db, `onibus/${rotaId}`));
       } catch (err) {
         console.error(
-          "Erro ao encerrar viagem no Firebase:",
+          "Erro ao remover ônibus do Firebase:",
           err
         );
       }

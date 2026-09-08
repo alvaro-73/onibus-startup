@@ -53,7 +53,10 @@ function AlunoContent() {
         typeof data?.lat === "number" &&
         typeof data?.lng === "number";
 
-      if (data?.viagemAtiva === true && temPosicaoValida) {
+      // A posição é publicada pelo GPS enquanto a viagem está ativa. O
+      // estado `false` é mantido somente por compatibilidade com registros
+      // antigos; ao encerrar, o motorista remove o registro por completo.
+      if (data?.viagemAtiva !== false && temPosicaoValida) {
         setOnibusPosicao([data.lat, data.lng]);
       } else {
         setOnibusPosicao(null);
