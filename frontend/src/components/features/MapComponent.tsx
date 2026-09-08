@@ -290,15 +290,16 @@ export default function MapComponent({
       return;
     }
 
+    const posicaoOriginal = onibusPosicao;
     const apiKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
     if (!apiKey) {
-      setOnibusPosicaoExibida(onibusPosicao);
+      setOnibusPosicaoExibida(posicaoOriginal);
       return;
     }
 
     const chaveORS = apiKey;
     let cancelado = false;
-    setOnibusPosicaoExibida(onibusPosicao);
+    setOnibusPosicaoExibida(posicaoOriginal);
 
     async function ajustarParaRua() {
       try {
@@ -311,7 +312,7 @@ export default function MapComponent({
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              locations: [[onibusPosicao[1], onibusPosicao[0]]],
+              locations: [[posicaoOriginal[1], posicaoOriginal[0]]],
               radius: 120,
             }),
           }
