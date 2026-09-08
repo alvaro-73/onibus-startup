@@ -1,3 +1,7 @@
+Sim. Agora ficou claro o que aconteceu: **há blocos ``` dentro do seu `.tsx`**. Esses blocos são Markdown e não podem existir no código TypeScript/JSX. Por isso o compilador chega ao `console.log` e quebra.
+
+Também vou manter a lógica que você queria: **desde o início, a Polyline mostra somente o caminho até a próxima parada e muda quando o ônibus chega nela**.
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -28,11 +32,11 @@ onibusPosicao?: Ponto | null;
 const RAIO_PARADA_METROS = 50;
 
 const defaultIcon = L.icon({
-iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+iconUrl: "[https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png](https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png)",
 iconRetinaUrl:
-"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+"[https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png](https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png)",
 shadowUrl:
-"https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+"[https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png](https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png)",
 iconSize: [25, 41],
 iconAnchor: [12, 41],
 popupAnchor: [1, -34],
@@ -115,13 +119,8 @@ map.setView(pos);
 return null;
 }
 
-/**
-
-* Distância entre duas coordenadas em metros.
-* Usa a fórmula de Haversine.
-  */
-  function distanciaMetros(a: Ponto, b: Ponto) {
-  const R = 6371000;
+function distanciaMetros(a: Ponto, b: Ponto) {
+const R = 6371000;
 
 const lat1 = (a[0] * Math.PI) / 180;
 const lat2 = (b[0] * Math.PI) / 180;
@@ -149,30 +148,20 @@ Math.sqrt(1 - h)
 );
 }
 
-/**
-
-* Distância aproximada usada para descobrir
-* o segmento da rota mais próximo do ônibus.
-  */
-  function distanciaQuadrada(a: Ponto, b: Ponto) {
-  const lat = a[0] - b[0];
-  const lng = a[1] - b[1];
+function distanciaQuadrada(a: Ponto, b: Ponto) {
+const lat = a[0] - b[0];
+const lng = a[1] - b[1];
 
 return lat * lat + lng * lng;
 }
 
-/**
-
-* Encontra o ponto mais próximo do ônibus
-* em um segmento da rota.
-  */
-  function pontoMaisProximoNoSegmento(
-  ponto: Ponto,
-  inicio: Ponto,
-  fim: Ponto
-  ): Ponto {
-  const x = ponto[1];
-  const y = ponto[0];
+function pontoMaisProximoNoSegmento(
+ponto: Ponto,
+inicio: Ponto,
+fim: Ponto
+): Ponto {
+const x = ponto[1];
+const y = ponto[0];
 
 const x1 = inicio[1];
 const y1 = inicio[0];
@@ -199,17 +188,13 @@ x1 + t * dx,
 ];
 }
 
-/**
-
-* Descobre onde o ônibus está na rota.
-  */
-  function encontrarPosicaoNaRota(
-  rota: Ponto[],
-  onibus: Ponto
-  ) {
-  let menorDistancia = Infinity;
-  let melhorPonto = rota[0];
-  let melhorSegmento = 0;
+function encontrarPosicaoNaRota(
+rota: Ponto[],
+onibus: Ponto
+) {
+let menorDistancia = Infinity;
+let melhorPonto = rota[0];
+let melhorSegmento = 0;
 
 for (let i = 0; i < rota.length - 1; i++) {
 const ponto = pontoMaisProximoNoSegmento(
@@ -239,20 +224,15 @@ segmento: melhorSegmento,
 };
 }
 
-/**
-
-* Encontra somente o trecho entre o início
-* e a próxima parada dentro da rota.
-  */
-  function encontrarTrechoProximaParada(
-  rota: Ponto[],
-  inicio: Ponto,
-  destino: Ponto,
-  onibus?: Ponto | null
-  ): Ponto[] {
-  if (rota.length < 2) {
-  return [inicio, destino];
-  }
+function encontrarTrechoProximaParada(
+rota: Ponto[],
+inicio: Ponto,
+destino: Ponto,
+onibus?: Ponto | null
+): Ponto[] {
+if (rota.length < 2) {
+return [inicio, destino];
+}
 
 const inicioRota = encontrarPosicaoNaRota(
 rota,
@@ -318,32 +298,14 @@ const [erroRota, setErroRota] = useState<string | null>(
 null
 );
 
-/*
+const [proximaParada, setProximaParada] =
+useState(0);
 
-* Índice da próxima parada.
-*
-* 0 = primeira parada
-* 1 = segunda parada
-* 2 = terceira parada
-  */
-  const [proximaParada, setProximaParada] =
-  useState(0);
-
-/*
-
-* Calcula uma única rota pelas ruas.
-*
-* A rota completa serve como referência para
-* encontrar somente o trecho da próxima parada.
-  */
-  useEffect(() => {
-  let cancelado = false;
+useEffect(() => {
+let cancelado = false;
 
 ```
 async function buscarRota() {
-```
-
-```
   if (!origem || paradas.length === 0) {
     setRotaRuas([]);
     return;
@@ -431,25 +393,17 @@ return () => {
 
 }, [origem, paradas]);
 
-/*
-
-* Verifica automaticamente se o ônibus
-* chegou perto da próxima parada.
-  */
-  useEffect(() => {
-  if (
-  !onibusPosicao ||
-  paradas.length === 0 ||
-  proximaParada >= paradas.length
-  ) {
-  return;
-  }
+useEffect(() => {
+if (
+!onibusPosicao ||
+paradas.length === 0 ||
+proximaParada >= paradas.length
+) {
+return;
+}
 
 ```
 const paradaAtual =
-```
-
-```
   paradas[proximaParada];
 
 const distancia = distanciaMetros(
@@ -485,28 +439,15 @@ paradas,
 proximaParada,
 ]);
 
-/*
-
-* MOSTRA SOMENTE O CAMINHO ATÉ A PRÓXIMA PARADA.
-*
-* início → parada 1
-* parada 1 → parada 2
-* parada 2 → parada 3
-*
-* Nunca mostra os próximos trechos.
-  */
-  const rotaProximaParada = useMemo(() => {
-  if (
-  proximaParada >= paradas.length
-  ) {
-  return [];
-  }
+const rotaProximaParada = useMemo(() => {
+if (
+proximaParada >= paradas.length
+) {
+return [];
+}
 
 ```
 const destino =
-```
-
-```
   paradas[proximaParada].coords;
 
 let inicio = origem;
@@ -534,29 +475,26 @@ proximaParada,
 onibusPosicao,
 ]);
 
-/*
+const onibusPosicaoExibida =
+useMemo<Ponto | null>(() => {
+if (!onibusPosicao) {
+return null;
+}
 
-* Posiciona o ícone do ônibus no ponto mais
-* próximo da rua.
-  */
-  const onibusPosicaoExibida =
-  useMemo<Ponto | null>(() => {
-  if (!onibusPosicao) {
-  return null;
-  }
-
+```
   if (rotaRuas.length < 2) {
-  return onibusPosicao;
+    return onibusPosicao;
   }
 
   return encontrarPosicaoNaRota(
-  rotaRuas,
-  onibusPosicao
+    rotaRuas,
+    onibusPosicao
   ).ponto;
-  }, [
+}, [
   rotaRuas,
   onibusPosicao,
-  ]);
+]);
+```
 
 const centroMapa =
 onibusPosicaoExibida ?? origem;
@@ -610,13 +548,6 @@ borderRadius: 8,
       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
     />
 
-    {/*
-     * SOMENTE O TRECHO DA PRÓXIMA PARADA.
-     *
-     * Desenha somente:
-     *
-     * ônibus → próxima parada
-     */}
     {rotaProximaParada.length > 1 && (
       <Polyline
         positions={rotaProximaParada}
@@ -628,9 +559,6 @@ borderRadius: 8,
       />
     )}
 
-    {/*
-     * PARADAS
-     */}
     {paradas.map((parada, i) => {
       const concluida =
         i < proximaParada;
@@ -667,9 +595,6 @@ borderRadius: 8,
       );
     })}
 
-    {/*
-     * ÔNIBUS
-     */}
     {onibusPosicaoExibida && (
       <Marker
         position={onibusPosicaoExibida}
@@ -679,8 +604,7 @@ borderRadius: 8,
           🚌 Ônibus em tempo real
           <br />
           Próxima parada:{" "}
-          {proximaParada <
-          paradas.length
+          {proximaParada < paradas.length
             ? paradas[
                 proximaParada
               ].nome
