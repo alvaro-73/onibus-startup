@@ -1,4 +1,3 @@
-```tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -45,7 +44,7 @@ const concluidaIcon = L.divIcon({
   className: "fluxbus-parada-concluida",
   html: `
     <div
-      style="
+      style='
         background:#16a34a;
         color:#fff;
         border:3px solid #fff;
@@ -58,7 +57,7 @@ const concluidaIcon = L.divIcon({
         font-weight:700;
         font-size:16px;
         box-shadow:0 2px 6px rgba(0,0,0,.3);
-      "
+      '
     >
       ✓
     </div>
@@ -71,7 +70,7 @@ const proximaIcon = L.divIcon({
   className: "fluxbus-proxima-parada",
   html: `
     <div
-      style="
+      style='
         background:#2563eb;
         color:#fff;
         border:3px solid #fff;
@@ -84,7 +83,7 @@ const proximaIcon = L.divIcon({
         font-weight:700;
         font-size:14px;
         box-shadow:0 2px 6px rgba(0,0,0,.3);
-      "
+      '
     >
       →
     </div>
@@ -97,7 +96,7 @@ const onibusIcon = L.divIcon({
   className: "fluxbus-onibus-icon",
   html: `
     <div
-      style="
+      style='
         background:#2563eb;
         color:#fff;
         border:2px solid #fff;
@@ -110,7 +109,7 @@ const onibusIcon = L.divIcon({
         font-weight:700;
         font-size:13px;
         box-shadow:0 2px 6px rgba(0,0,0,.3);
-      "
+      '
     >
       🚌
     </div>
@@ -255,7 +254,7 @@ export default function MapComponent({
 }: Props) {
   /*
    * Cada posição representa um trecho:
-
+   *
    * 0 = origem → parada 1
    * 1 = parada 1 → parada 2
    * 2 = parada 2 → parada 3
@@ -279,14 +278,6 @@ export default function MapComponent({
 
   /*
    * Calcula cada trecho da rota separadamente.
-   *
-   * Isso permite mostrar somente:
-   *
-   * origem → parada atual
-   *
-   * depois:
-   *
-   * parada atual → próxima parada
    */
   useEffect(() => {
     async function buscarRotas() {
@@ -365,10 +356,6 @@ export default function MapComponent({
           novasRotas
         );
 
-        /*
-         * Começa pela primeira parada
-         * sempre que a rota for recalculada.
-         */
         setProximaParada(0);
       } catch (error) {
         console.error(
@@ -417,11 +404,6 @@ export default function MapComponent({
       )}m`
     );
 
-    /*
-     * Só considera a parada concluída
-     * quando o ônibus estiver dentro
-     * do raio definido.
-     */
     if (
       distancia <=
       RAIO_PARADA_METROS
@@ -446,17 +428,6 @@ export default function MapComponent({
 
   /*
    * Pega SOMENTE o trecho da próxima parada.
-   *
-   * Exemplo:
-   *
-   * proximaParada = 0
-   * → origem → Smartfit
-   *
-   * proximaParada = 1
-   * → Smartfit → Sabor Divino
-   *
-   * proximaParada = 2
-   * → Sabor Divino → Dione
    */
   const rotaProximaParada =
     useMemo(() => {
@@ -501,8 +472,6 @@ export default function MapComponent({
        * Mostra somente:
        *
        * ônibus → próxima parada
-       *
-       * O que ficou para trás desaparece.
        */
       return [
         resultado.ponto,
@@ -612,9 +581,7 @@ export default function MapComponent({
         />
 
         {/*
-         * ==========================================
          * SOMENTE O CAMINHO DA PRÓXIMA PARADA
-         * ==========================================
          */}
         {rotaProximaParada.length >
           1 && (
@@ -709,4 +676,3 @@ export default function MapComponent({
     </div>
   );
 }
-```
