@@ -1,0 +1,34 @@
+import type { Metadata } from "next";
+import "leaflet/dist/leaflet.css";
+import "./globals.css";
+import AppShell from "@/components/layout/AppShell";
+import { ViagemProvider } from "@/contexts/ViagemContext";
+
+export const metadata: Metadata = {
+  title: "Fluxbus - Mobilidade Urbana",
+  description:
+    "Plataforma de transporte escolar com rastreamento em tempo real.",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html
+      lang="pt-BR"
+      className="h-full"
+      suppressHydrationWarning
+    >
+      <body
+        className="min-h-full bg-white text-slate-900 antialiased"
+        suppressHydrationWarning
+      >
+        <ViagemProvider>
+          <AppShell>{children}</AppShell>
+        </ViagemProvider>
+      </body>
+    </html>
+  );
+}
