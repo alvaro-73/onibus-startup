@@ -164,27 +164,8 @@ function distanciaMetros(a: Ponto, b: Ponto) {
 }
 
 /*
- * Distância aproximada entre dois pontos.
- *
- * Usada somente para descobrir
- * qual ponto/segmento da rota é mais próximo.
- */
-function distanciaQuadrada(a: Ponto, b: Ponto) {
-  const lat = a[0] - b[0];
-  const lng = a[1] - b[1];
-
-  return lat * lat + lng * lng;
-}
-
-/*
- * Calcula o ponto mais próximo de um ponto
- * dentro de um segmento da rota.
- *
- * IMPORTANTE:
- * O resultado sempre fica SOBRE o segmento original.
- *
- * Isso evita criar uma linha artificial
- * atravessando casas.
+ * Calcula o ponto mais próximo entre um ponto
+ * e um segmento da rota.
  */
 function pontoMaisProximoNoSegmento(
   ponto: Ponto,
@@ -220,8 +201,8 @@ function pontoMaisProximoNoSegmento(
 }
 
 /*
- * Encontra a posição do ônibus
- * na geometria original da rota.
+ * Encontra o ponto da rota mais próximo
+ * do ônibus e o índice do segmento.
  */
 function encontrarPosicaoNaRota(
   rota: Ponto[],
@@ -254,7 +235,14 @@ function encontrarPosicaoNaRota(
       );
 
     const distancia =
-      distanciaQuadrada(onibus, ponto);
+      Math.pow(
+        ponto[0] - onibus[0],
+        2
+      ) +
+      Math.pow(
+        ponto[1] - onibus[1],
+        2
+      );
 
     if (distancia < menorDistancia) {
       menorDistancia = distancia;
@@ -271,57 +259,31 @@ function encontrarPosicaoNaRota(
 
 /*
  * Encontra o ponto da rota mais próximo
- * da parada e retorna seu índice.
- *
- * Procuramos nos SEGMENTOS, e não apenas
- * nos vértices, porque a coordenada exata
- * da parada normalmente não é um vértice
- * da geometria do OpenRouteService.
+ * de uma parada.
  */
-function encontrarPosicaoDaParadaNaRota(
+function encontrarIndiceDaParadaNaRota(
   rota: Ponto[],
   parada: Ponto
 ) {
   if (rota.length === 0) {
-    return {
-      ponto: parada,
-      segmento: 0,
-    };
-  }
-
-  if (rota.length === 1) {
-    return {
-      ponto: rota[0],
-      segmento: 0,
-    };
+    return 0;
   }
 
   let menorDistancia = Infinity;
-  let melhorPonto = rota[0];
-  let melhorSegmento = 0;
+  let melhorIndice = 0;
 
-  for (let i = 0; i < rota.length - 1; i++) {
-    const ponto =
-      pontoMaisProximoNoSegmento(
-        parada,
-        rota[i],
-        rota[i + 1]
-      );
-
+  for (let i = 0; i < rota.length; i++) {
     const distancia =
-      distanciaQuadrada(parada, ponto);
+      Math.pow(rota[i][0] - parada[0], 2) +
+      Math.pow(rota[i][1] - parada[1], 2);
 
     if (distancia < menorDistancia) {
       menorDistancia = distancia;
-      melhorPonto = ponto;
-      melhorSegmento = i;
+      melhorIndice = i;
     }
   }
 
-  return {
-    ponto: melhorPonto,
-    segmento: melhorSegmento,
-  };
+  return melhorIndice;
 }
 
 export default function MapComponent({
@@ -329,9 +291,7 @@ export default function MapComponent({
   paradas,
   onibusPosicao,
 }: Props) {
-  const [rotaRuas, setRotaRuas] =
-    useState<Ponto[]>([]);
-
+  const [rotaRuas, setRotaRuas] = useState<Ponto[]>([]);
   const [erroRota, setErroRota] =
     useState<string | null>(null);
 
@@ -350,10 +310,12 @@ export default function MapComponent({
    * ROTA COMPLETA PELAS RUAS
    * =====================================================
    *
-   * A API continua sendo chamada exatamente
-   * como antes.
+   * Esta rota é calculada uma única vez para:
    *
-   * Origem → parada 1 → parada 2 → parada 3...
+   * origem → parada 1 → parada 2 → parada 3...
+   *
+   * Depois usamos os pontos dela para montar
+   * somente o trecho que interessa.
    */
   useEffect(() => {
     async function buscarRota() {
@@ -375,13 +337,6 @@ export default function MapComponent({
           ),
         ];
 
-        /*
-         * Leaflet usa:
-         * [latitude, longitude]
-         *
-         * ORS recebe:
-         * [longitude, latitude]
-         */
         const coordinates =
           pontos.map(
             ([lat, lng]) => [lng, lat]
@@ -422,10 +377,6 @@ export default function MapComponent({
         const geometry =
           data.features[0].geometry;
 
-        /*
-         * Converte novamente para:
-         * [latitude, longitude]
-         */
         const rotaConvertida: Ponto[] =
           geometry.coordinates.map(
             ([lng, lat]: [
@@ -434,15 +385,7 @@ export default function MapComponent({
             ]) => [lat, lng]
           );
 
-        /*
-         * GUARDA A ROTA ORIGINAL.
-         *
-         * Nunca modificamos essa geometria
-         * para criar caminhos artificiais.
-         */
-        setRotaRuas(
-          rotaConvertida
-        );
+        setRotaRuas(rotaConvertida);
       } catch (error) {
         console.error(
           "Erro ao calcular rota:",
@@ -456,7 +399,7 @@ export default function MapComponent({
         );
 
         /*
-         * Fallback somente se a API falhar.
+         * Fallback caso a API falhe.
          */
         setRotaRuas([
           origem,
@@ -475,11 +418,7 @@ export default function MapComponent({
    * DETECTA CHEGADA À PRÓXIMA PARADA
    * =====================================================
    *
-   * A chegada continua sendo baseada
-   * na posição REAL do GPS.
-   *
-   * Não usamos a posição projetada na rua
-   * para decidir se chegou.
+   * O ônibus precisa chegar a até 50 metros.
    */
   useEffect(() => {
     if (
@@ -529,31 +468,56 @@ export default function MapComponent({
 
   /*
    * =====================================================
-   * TRECHO DO ÔNIBUS ATÉ A PRÓXIMA PARADA
+   * TRECHO TRACEJADO
    * =====================================================
    *
-   * ESTA É A PARTE MAIS IMPORTANTE.
+   * AQUI ESTÁ A PRINCIPAL CORREÇÃO.
    *
-   * O resultado será:
+   * O começo do tracejado é o ônibus.
    *
-   * 🚌 posição do ônibus
-   *       ↓
-   * rota original pelas ruas
-   *       ↓
-   * próxima parada
+   * O final é a próxima parada.
    *
-   * Não criamos uma linha direta até a parada.
+   * Exemplo:
+   *
+   *          🚌
+   *          ↓
+   * ────────────────→ PARADA 1
+   *
+   * Depois:
+   *
+   *                    🚌
+   *                    ↓
+   * PARADA 1 ───────────────→ PARADA 2
+   *
+   * Depois:
+   *
+   *                         🚌
+   *                         ↓
+   * PARADA 2 ───────────────────→ PARADA 3
    */
   const rotaRestante = useMemo(() => {
     /*
-     * Não existe rota válida.
+     * Sem rota pelas ruas, usa uma linha
+     * entre o ônibus e a próxima parada.
      */
     if (rotaRuas.length < 2) {
+      if (
+        onibusPosicao &&
+        proximaParada <
+          paradas.length
+      ) {
+        return [
+          onibusPosicao,
+          paradas[proximaParada]
+            .coords,
+        ];
+      }
+
       return [];
     }
 
     /*
-     * Todas as paradas foram concluídas.
+     * Todas as paradas já foram concluídas.
      */
     if (
       proximaParada >= paradas.length
@@ -561,17 +525,10 @@ export default function MapComponent({
       return [];
     }
 
-    const paradaAtual =
-      paradas[proximaParada];
-
     /*
-     * -----------------------------------------------------
-     * SEM GPS DO ÔNIBUS
-     * -----------------------------------------------------
-     *
-     * Nesse caso mostramos a rota original
-     * desde a origem ou desde a parada anterior
-     * até a próxima parada.
+     * Se não temos posição do ônibus,
+     * mostramos o trecho completo
+     * a partir da origem/parada anterior.
      */
     if (!onibusPosicao) {
       const pontoInicial =
@@ -581,112 +538,79 @@ export default function MapComponent({
               proximaParada - 1
             ].coords;
 
-      const posicaoInicial =
-        encontrarPosicaoDaParadaNaRota(
+      const indiceFinal =
+        encontrarIndiceDaParadaNaRota(
           rotaRuas,
-          pontoInicial
-        );
-
-      const posicaoFinal =
-        encontrarPosicaoDaParadaNaRota(
-          rotaRuas,
-          paradaAtual.coords
+          paradas[proximaParada]
+            .coords
         );
 
       /*
-       * Usa somente a geometria original.
+       * Encontra o ponto inicial da rota.
        */
-      if (
-        posicaoFinal.segmento <
-        posicaoInicial.segmento
-      ) {
-        return [];
-      }
+      const indiceInicial =
+        proximaParada === 0
+          ? 0
+          : encontrarIndiceDaParadaNaRota(
+              rotaRuas,
+              pontoInicial
+            );
 
-      return [
-        posicaoInicial.ponto,
-        ...rotaRuas.slice(
-          posicaoInicial.segmento + 1,
-          posicaoFinal.segmento + 1
-        ),
-        posicaoFinal.ponto,
-      ];
+      return rotaRuas.slice(
+        indiceInicial,
+        indiceFinal + 1
+      );
     }
 
     /*
-     * -----------------------------------------------------
-     * COM GPS DO ÔNIBUS
-     * -----------------------------------------------------
+     * Encontra onde o ônibus está
+     * na rota pelas ruas.
      */
-
-    /*
-     * Descobre onde o ônibus está
-     * sobre a rota original.
-     */
-    const posicaoOnibus =
+    const posicao =
       encontrarPosicaoNaRota(
         rotaRuas,
         onibusPosicao
       );
 
     /*
-     * Descobre onde a próxima parada está
-     * sobre a mesma rota original.
+     * Encontra onde a próxima parada
+     * está na rota.
      */
-    const posicaoParada =
-      encontrarPosicaoDaParadaNaRota(
+    const indiceParada =
+      encontrarIndiceDaParadaNaRota(
         rotaRuas,
-        paradaAtual.coords
+        paradas[proximaParada]
+          .coords
       );
 
     /*
-     * Se a posição encontrada da parada
-     * estiver antes do ônibus na geometria,
-     * não podemos simplesmente desenhar
-     * para trás.
-     *
-     * Isso pode acontecer por pequenas
-     * oscilações do GPS.
+     * O ônibus pode estar um pouco antes
+     * ou depois do ponto encontrado para
+     * a parada devido à precisão do GPS.
      */
     if (
-      posicaoParada.segmento <
-      posicaoOnibus.segmento
+      indiceParada <=
+      posicao.segmento
     ) {
-      return [];
+      return [
+        posicao.ponto,
+        paradas[proximaParada]
+          .coords,
+      ];
     }
 
     /*
-     * =====================================================
-     * AQUI ESTÁ O CAMINHO CORRETO
-     * =====================================================
-     *
-     * Primeiro ponto:
-     *     posição do ônibus PROJETADA SOBRE A RUA
-     *
-     * Depois:
-     *     pontos ORIGINAIS da rota ORS
-     *
-     * Último ponto:
-     *     posição da parada PROJETADA SOBRE A RUA
-     *
-     * Não colocamos:
-     *
-     *     paradas[proximaParada].coords
-     *
-     * no final.
-     *
-     * Isso evita criar uma reta artificial
-     * entre a rota e a coordenada da parada.
+     * COMEÇA EXATAMENTE NO ÔNIBUS
+     * E SEGUE PELAS RUAS ATÉ A PRÓXIMA PARADA.
      */
     return [
-      posicaoOnibus.ponto,
-
+      posicao.ponto,
       ...rotaRuas.slice(
-        posicaoOnibus.segmento + 1,
-        posicaoParada.segmento + 1
+        posicao.segmento + 1,
+        indiceParada + 1
       ),
-
-      posicaoParada.ponto,
+      paradas[proximaParada]
+        .coords,
     ];
   }, [
     rotaRuas,
@@ -700,12 +624,6 @@ export default function MapComponent({
    * =====================================================
    * POSIÇÃO VISUAL DO ÔNIBUS
    * =====================================================
-   *
-   * O marcador também é colocado na rota original.
-   *
-   * Assim, se o GPS estiver alguns metros
-   * fora da rua, o ícone não aparece
-   * dentro de uma casa.
    */
   const onibusPosicaoExibida =
     useMemo<Ponto | null>(() => {
@@ -785,17 +703,16 @@ export default function MapComponent({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* =================================================
-            TRAJETO TRACEJADO
-            
-            SOMENTE:
-            
-            🚌 ÔNIBUS
-                ↓
-            RUAS DA ROTA ORIGINAL
-                ↓
-            PRÓXIMA PARADA
-        ================================================= */}
+        {/*
+         * =================================================
+         * TRACEJADO
+         * =================================================
+         *
+         * Sempre:
+         *
+         * ÔNIBUS → PRÓXIMA PARADA
+         */
+        }
         {rotaRestante.length > 1 && (
           <Polyline
             positions={rotaRestante}
@@ -808,9 +725,11 @@ export default function MapComponent({
           />
         )}
 
-        {/* =================================================
-            PARADAS
-        ================================================= */}
+        {/*
+         * =================================================
+         * PARADAS
+         * =================================================
+         */}
         {paradas.map(
           (parada, i) => {
             const concluida =
@@ -849,9 +768,11 @@ export default function MapComponent({
           }
         )}
 
-        {/* =================================================
-            ÔNIBUS
-        ================================================= */}
+        {/*
+         * =================================================
+         * ÔNIBUS
+         * =================================================
+         */}
         {onibusPosicaoExibida && (
           <Marker
             position={
