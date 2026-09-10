@@ -1,7 +1,7 @@
 ```tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -130,7 +130,8 @@ function Recenter({ pos }: { pos: Ponto }) {
 }
 
 /*
- * Distância entre duas coordenadas em metros.
+ * Calcula a distância entre dois pontos em metros.
+ * Usa a fórmula de Haversine.
  */
 function distanciaMetros(a: Ponto, b: Ponto) {
   const R = 6371000;
@@ -166,6 +167,8 @@ function distanciaMetros(a: Ponto, b: Ponto) {
 
 /*
  * Distância aproximada entre dois pontos.
+ * Usada para descobrir qual segmento
+ * da rota está mais próximo do ônibus.
  */
 function distanciaQuadrada(a: Ponto, b: Ponto) {
   const lat = a[0] - b[0];
@@ -175,7 +178,8 @@ function distanciaQuadrada(a: Ponto, b: Ponto) {
 }
 
 /*
- * Encontra o ponto da rota mais próximo do ônibus.
+ * Encontra o ponto da rota mais próximo
+ * da posição atual do ônibus.
  */
 function pontoMaisProximoNoSegmento(
   ponto: Ponto,
@@ -211,7 +215,7 @@ function pontoMaisProximoNoSegmento(
 }
 
 /*
- * Encontra a posição do ônibus dentro de uma rota.
+ * Descobre onde o ônibus está na rota.
  */
 function encontrarPosicaoNaRota(
   rota: Ponto[],
@@ -249,6 +253,14 @@ export default function MapComponent({
   paradas,
   onibusPosicao,
 }: Props) {
+  /*
+   * Cada posição representa um trecho:
+
+   * 0 = origem → parada 1
+   * 1 = parada 1 → parada 2
+   * 2 = parada 2 → parada 3
+   * etc.
+   */
   const [rotasPorTrecho, setRotasPorTrecho] =
     useState<Ponto[][]>([]);
 
@@ -266,12 +278,15 @@ export default function MapComponent({
     useState(0);
 
   /*
-   * Cada trecho é:
+   * Calcula cada trecho da rota separadamente.
    *
-   * origem → parada 1
-   * parada 1 → parada 2
-   * parada 2 → parada 3
-   * ...
+   * Isso permite mostrar somente:
+   *
+   * origem → parada atual
+   *
+   * depois:
+   *
+   * parada atual → próxima parada
    */
   useEffect(() => {
     async function buscarRotas() {
@@ -285,32 +300,40 @@ export default function MapComponent({
 
         const pontos = [
           origem,
-          ...paradas.map((parada) => parada.coords),
+          ...paradas.map(
+            (parada) => parada.coords
+          ),
         ];
 
         const novasRotas: Ponto[][] = [];
 
-        /*
-         * Calcula cada trecho separadamente.
-         */
-        for (let i = 0; i < pontos.length - 1; i++) {
+        for (
+          let i = 0;
+          i < pontos.length - 1;
+          i++
+        ) {
           const inicio = pontos[i];
           const fim = pontos[i + 1];
 
-          const response = await fetch("/api/rotas", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              coordinates: [
-                [inicio[1], inicio[0]],
-                [fim[1], fim[0]],
-              ],
-            }),
-          });
+          const response = await fetch(
+            "/api/rotas",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                coordinates: [
+                  [inicio[1], inicio[0]],
+                  [fim[1], fim[0]],
+                ],
+              }),
+            }
+          );
 
-          const data = await response.json();
+          const data =
+            await response.json();
 
           if (
             !response.ok ||
@@ -327,20 +350,24 @@ export default function MapComponent({
 
           const rotaConvertida: Ponto[] =
             geometry.coordinates.map(
-              ([lng, lat]: [number, number]) => [
-                lat,
-                lng,
-              ]
+              ([lng, lat]: [
+                number,
+                number
+              ]) => [lat, lng]
             );
 
-          novasRotas.push(rotaConvertida);
+          novasRotas.push(
+            rotaConvertida
+          );
         }
 
-        setRotasPorTrecho(novasRotas);
+        setRotasPorTrecho(
+          novasRotas
+        );
 
         /*
-         * Ao trocar de rota, começa novamente
-         * pela primeira parada.
+         * Começa pela primeira parada
+         * sempre que a rota for recalculada.
          */
         setProximaParada(0);
       } catch (error) {
@@ -363,10 +390,8 @@ export default function MapComponent({
   }, [origem, paradas]);
 
   /*
-   * Verifica se o ônibus chegou à próxima parada.
-   *
-   * Só avança quando realmente estiver
-   * dentro do raio definido.
+   * Verifica se o ônibus chegou
+   * à próxima parada.
    */
   useEffect(() => {
     if (
@@ -380,10 +405,11 @@ export default function MapComponent({
     const paradaAtual =
       paradas[proximaParada];
 
-    const distancia = distanciaMetros(
-      onibusPosicao,
-      paradaAtual.coords
-    );
+    const distancia =
+      distanciaMetros(
+        onibusPosicao,
+        paradaAtual.coords
+      );
 
     console.log(
       `Distância até ${paradaAtual.nome}: ${Math.round(
@@ -391,18 +417,25 @@ export default function MapComponent({
       )}m`
     );
 
+    /*
+     * Só considera a parada concluída
+     * quando o ônibus estiver dentro
+     * do raio definido.
+     */
     if (
-      distancia <= RAIO_PARADA_METROS
+      distancia <=
+      RAIO_PARADA_METROS
     ) {
       console.log(
         `Parada concluída: ${paradaAtual.nome}`
       );
 
-      setProximaParada((atual) =>
-        Math.min(
-          atual + 1,
-          paradas.length
-        )
+      setProximaParada(
+        (atual) =>
+          Math.min(
+            atual + 1,
+            paradas.length
+          )
       );
     }
   }, [
@@ -425,57 +458,68 @@ export default function MapComponent({
    * proximaParada = 2
    * → Sabor Divino → Dione
    */
-  const rotaProximaParada = useMemo(() => {
-    if (
-      proximaParada >= paradas.length
-    ) {
-      return [];
-    }
+  const rotaProximaParada =
+    useMemo(() => {
+      if (
+        proximaParada >=
+        paradas.length
+      ) {
+        return [];
+      }
 
-    const rota =
-      rotasPorTrecho[proximaParada];
+      const rota =
+        rotasPorTrecho[
+          proximaParada
+        ];
 
-    if (!rota || rota.length < 2) {
-      return [];
-    }
+      if (
+        !rota ||
+        rota.length < 2
+      ) {
+        return [];
+      }
 
-    /*
-     * Se ainda não temos GPS,
-     * mostra o trecho inteiro.
-     */
-    if (!onibusPosicao) {
-      return rota;
-    }
+      /*
+       * Se ainda não temos posição
+       * do ônibus, mostra o trecho inteiro.
+       */
+      if (!onibusPosicao) {
+        return rota;
+      }
 
-    /*
-     * Descobre onde o ônibus está
-     * nesse trecho.
-     */
-    const resultado =
-      encontrarPosicaoNaRota(
-        rota,
-        onibusPosicao
-      );
+      /*
+       * Descobre em qual ponto da rota
+       * o ônibus está.
+       */
+      const resultado =
+        encontrarPosicaoNaRota(
+          rota,
+          onibusPosicao
+        );
 
-    /*
-     * Mostra somente do ônibus até
-     * a próxima parada.
-     */
-    return [
-      resultado.ponto,
-      ...rota.slice(
-        resultado.segmento + 1
-      ),
-    ];
-  }, [
-    rotasPorTrecho,
-    proximaParada,
-    onibusPosicao,
-    paradas.length,
-  ]);
+      /*
+       * Mostra somente:
+       *
+       * ônibus → próxima parada
+       *
+       * O que ficou para trás desaparece.
+       */
+      return [
+        resultado.ponto,
+        ...rota.slice(
+          resultado.segmento + 1
+        ),
+      ];
+    }, [
+      rotasPorTrecho,
+      proximaParada,
+      onibusPosicao,
+      paradas.length,
+    ]);
 
   /*
-   * Coloca o ônibus na rua mais próxima.
+   * Coloca o marcador do ônibus
+   * na rua mais próxima.
    */
   const onibusPosicaoExibida =
     useMemo<Ponto | null>(() => {
@@ -484,9 +528,14 @@ export default function MapComponent({
       }
 
       const rota =
-        rotasPorTrecho[proximaParada];
+        rotasPorTrecho[
+          proximaParada
+        ];
 
-      if (!rota || rota.length < 2) {
+      if (
+        !rota ||
+        rota.length < 2
+      ) {
         return onibusPosicao;
       }
 
@@ -501,7 +550,8 @@ export default function MapComponent({
     ]);
 
   const centroMapa =
-    onibusPosicaoExibida ?? origem;
+    onibusPosicaoExibida ??
+    origem;
 
   return (
     <div>
@@ -529,13 +579,21 @@ export default function MapComponent({
           fontWeight: 600,
         }}
       >
-        {proximaParada < paradas.length ? (
+        {proximaParada <
+        paradas.length ? (
           <>
             Próxima parada:{" "}
-            {paradas[proximaParada].nome}
+            {
+              paradas[
+                proximaParada
+              ].nome
+            }
           </>
         ) : (
-          <>Todas as paradas foram concluídas ✓</>
+          <>
+            Todas as paradas
+            foram concluídas ✓
+          </>
         )}
       </div>
 
@@ -558,9 +616,12 @@ export default function MapComponent({
          * SOMENTE O CAMINHO DA PRÓXIMA PARADA
          * ==========================================
          */}
-        {rotaProximaParada.length > 1 && (
+        {rotaProximaParada.length >
+          1 && (
           <Polyline
-            positions={rotaProximaParada}
+            positions={
+              rotaProximaParada
+            }
             pathOptions={{
               color: "#2563eb",
               weight: 5,
@@ -573,52 +634,62 @@ export default function MapComponent({
         {/*
          * PARADAS
          */}
-        {paradas.map((parada, i) => {
-          const concluida =
-            i < proximaParada;
+        {paradas.map(
+          (parada, i) => {
+            const concluida =
+              i < proximaParada;
 
-          const proxima =
-            i === proximaParada;
+            const proxima =
+              i ===
+              proximaParada;
 
-          return (
-            <Marker
-              key={`${parada.nome}-${i}`}
-              position={parada.coords}
-              icon={
-                concluida
-                  ? concluidaIcon
-                  : proxima
-                  ? proximaIcon
-                  : defaultIcon
-              }
-            >
-              <Popup>
-                <strong>
-                  {concluida
-                    ? "✓ Parada concluída"
+            return (
+              <Marker
+                key={`${parada.nome}-${i}`}
+                position={
+                  parada.coords
+                }
+                icon={
+                  concluida
+                    ? concluidaIcon
                     : proxima
-                    ? "→ Próxima parada"
-                    : `Parada ${i + 1}`}
-                </strong>
+                    ? proximaIcon
+                    : defaultIcon
+                }
+              >
+                <Popup>
+                  <strong>
+                    {concluida
+                      ? "✓ Parada concluída"
+                      : proxima
+                      ? "→ Próxima parada"
+                      : `Parada ${
+                          i + 1
+                        }`}
+                  </strong>
 
-                <br />
+                  <br />
 
-                {parada.nome}
-              </Popup>
-            </Marker>
-          );
-        })}
+                  {parada.nome}
+                </Popup>
+              </Marker>
+            );
+          }
+        )}
 
         {/*
          * ÔNIBUS
          */}
         {onibusPosicaoExibida && (
           <Marker
-            position={onibusPosicaoExibida}
+            position={
+              onibusPosicaoExibida
+            }
             icon={onibusIcon}
           >
             <Popup>
-              🚌 Ônibus em tempo real
+              🚌 Ônibus em
+              tempo real
               <br />
               Próxima parada:{" "}
               {proximaParada <
@@ -631,7 +702,9 @@ export default function MapComponent({
           </Marker>
         )}
 
-        <Recenter pos={centroMapa} />
+        <Recenter
+          pos={centroMapa}
+        />
       </MapContainer>
     </div>
   );
