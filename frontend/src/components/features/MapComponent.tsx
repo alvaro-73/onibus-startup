@@ -219,6 +219,31 @@ function pontoMaisProximoNoSegmento(
 }
 
 /*
+ * Retorna o progresso do ponto dentro de um segmento.
+ * 0 representa o início e 1 representa o fim.
+ */
+function progressoNoSegmento(
+  ponto: Ponto,
+  inicio: Ponto,
+  fim: Ponto
+) {
+  const dx = fim[1] - inicio[1];
+  const dy = fim[0] - inicio[0];
+  const tamanhoQuadrado = dx * dx + dy * dy;
+
+  if (tamanhoQuadrado === 0) {
+    return 0;
+  }
+
+  const progresso =
+    ((ponto[1] - inicio[1]) * dx +
+      (ponto[0] - inicio[0]) * dy) /
+    tamanhoQuadrado;
+
+  return Math.max(0, Math.min(1, progresso));
+}
+
+/*
  * =========================================================
  * POSIÇÃO DO ÔNIBUS NA ROTA
  * =========================================================
@@ -234,6 +259,7 @@ function encontrarPosicaoNaRota(
     return {
       ponto: onibus,
       segmento: 0,
+      progresso: 0,
     };
   }
 
@@ -241,6 +267,7 @@ function encontrarPosicaoNaRota(
     return {
       ponto: rota[0],
       segmento: 0,
+      progresso: 0,
     };
   }
 
@@ -269,6 +296,13 @@ function encontrarPosicaoNaRota(
   return {
     ponto: melhorPonto,
     segmento: melhorSegmento,
+    progresso:
+      melhorSegmento +
+      progressoNoSegmento(
+        melhorPonto,
+        rota[melhorSegmento],
+        rota[melhorSegmento + 1]
+      ),
   };
 }
 
@@ -292,6 +326,7 @@ function encontrarParadaNaParteDaRota(
     return {
       ponto: rota[0] ?? parada,
       segmento: 0,
+      progresso: 0,
     };
   }
 
@@ -334,6 +369,13 @@ function encontrarParadaNaParteDaRota(
   return {
     ponto: melhorPonto,
     segmento: melhorSegmento,
+    progresso:
+      melhorSegmento +
+      progressoNoSegmento(
+        melhorPonto,
+        rota[melhorSegmento],
+        rota[melhorSegmento + 1]
+      ),
   };
 }
 
@@ -364,6 +406,7 @@ function encontrarPosicoesDasParadas(
   const resultado: {
     ponto: Ponto;
     segmento: number;
+    progresso: number;
   }[] = [];
 
   if (rota.length < 2) {
@@ -703,8 +746,8 @@ export default function MapComponent({
      * O ônibus está antes da parada.
      */
     if (
-      posicaoOnibus.segmento <=
-      posicaoParada.segmento
+      posicaoOnibus.progresso <=
+      posicaoParada.progresso
     ) {
       const trecho = [
         /*
@@ -754,25 +797,33 @@ export default function MapComponent({
     }
 
     /*
-     * -----------------------------------------------------
-     * GPS PASSOU UM POUCO DO SEGMENTO DA PARADA
-     * -----------------------------------------------------
-     *
-     * Isso pode acontecer por:
-     *
-     * - GPS impreciso
-     * - ônibus fora da rua alguns metros
-     * - curva da rua
-     *
-     * Não vamos desenhar uma linha reta.
-     *
-     * O correto é aguardar a detecção de chegada
-     * pelo raio de 50 metros.
-     *
-     * Portanto, nesse caso não desenhamos um
-     * caminho incorreto para trás.
+     * Se o GPS já estiver depois da parada atual, ela continua sendo a
+     * próxima até o ônibus entrar no raio de chegada. Desenhamos a rota no
+     * sentido inverso para que o caminho não desapareça nem pule a parada.
      */
-    return [];
+    const trechoDeVolta = [
+      posicaoOnibus.ponto,
+      ...rotaRuas
+        .slice(
+          posicaoParada.segmento + 1,
+          posicaoOnibus.segmento + 1
+        )
+        .reverse(),
+      posicaoParada.ponto,
+    ];
+
+    return trechoDeVolta.filter(
+      (ponto, index, array) => {
+        if (index === 0) {
+          return true;
+        }
+
+        return (
+          ponto[0] !== array[index - 1][0] ||
+          ponto[1] !== array[index - 1][1]
+        );
+      }
+    );
   }, [
     rotaRuas,
     onibusPosicao,
