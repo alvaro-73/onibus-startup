@@ -37,8 +37,7 @@ function AlunoContent() {
   const [mostrarMapa, setMostrarMapa] = useState(false);
   const [onibusPosicao, setOnibusPosicao] = useState<[number, number] | null>(null);
   const [erroORS, setErroORS] = useState<string | null>(null);
-
-  const origemAtual = onibusPosicao ?? rotaSelecionada!.origem;
+  const [proximaParada, setProximaParada] = useState(0);
 
   // Onibus em tempo real (Firebase)
   useEffect(() => {
@@ -69,53 +68,96 @@ function AlunoContent() {
     return () => unsub();
   }, [rotaSelecionada]);
 
-  // Calculo de rotas (ORS) com debounce
+  // A previsão só avança quando o ônibus realmente chega à parada atual.
+  useEffect(() => {
+    setProximaParada(0);
+  }, [rotaSelecionada]);
+
+  useEffect(() => {
+    if (!onibusPosicao || proximaParada >= rotaSelecionada.paradas.length) {
+      return;
+    }
+
+    const paradaAtual = rotaSelecionada.paradas[proximaParada];
+    const raioDaTerra = 6371000;
+    const lat1 = (onibusPosicao[0] * Math.PI) / 180;
+    const lat2 = (paradaAtual.coords[0] * Math.PI) / 180;
+    const deltaLat = ((paradaAtual.coords[0] - onibusPosicao[0]) * Math.PI) / 180;
+    const deltaLng = ((paradaAtual.coords[1] - onibusPosicao[1]) * Math.PI) / 180;
+    const h =
+      Math.sin(deltaLat / 2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+    const distancia = 2 * raioDaTerra * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+
+    if (distancia <= 50) {
+      setProximaParada((atual) => Math.min(atual + 1, rotaSelecionada.paradas.length));
+    }
+  }, [onibusPosicao, proximaParada, rotaSelecionada]);
+
+  // A previsão começa na posição atual do ônibus e é atualizada a cada
+  // nova localização recebida do GPS.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!rotaSelecionada) return;
     setErroORS(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    let ignorarResultado = false;
+
     debounceRef.current = setTimeout(async () => {
       setCarregando(true);
-      let pontoAtual = rotaSelecionada.origem;
+      const pontoAtual = onibusPosicao ?? rotaSelecionada.origem;
+      const paradasPendentes = rotaSelecionada.paradas.slice(proximaParada);
       let tempoTotal = 0;
       let distanciaTotal = 0;
       const resultados: ParadaCalc[] = [];
       try {
-        for (const parada of rotaSelecionada.paradas) {
-          const resp = await fetch(
-            "/api/rotas",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                coordinates: [
-                  [pontoAtual[1], pontoAtual[0]],
-                  [parada.coords[1], parada.coords[0]],
-                ],
-              }),
-            },
+        if (paradasPendentes.length === 0) {
+          setParadas([]);
+          return;
+        }
+
+        const resp = await fetch(
+          "/api/rotas",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              coordinates: [
+                [pontoAtual[1], pontoAtual[0]],
+                ...paradasPendentes.map((parada) => [parada.coords[1], parada.coords[0]]),
+              ],
+            }),
+          },
+        );
+        const data = await resp.json();
+        if (ignorarResultado) return;
+
+        if (!resp.ok) {
+          throw new Error(
+            data?.erro ?? `OpenRouteService respondeu ${resp.status}.`
           );
-          const data = await resp.json();
-          if (!resp.ok) {
-            throw new Error(
-              data?.erro ?? `OpenRouteService respondeu ${resp.status}.`
-            );
-          }
-          if (!data?.features?.length) continue;
-          const summary = data.features[0].properties.summary;
-          tempoTotal += Math.ceil(summary.duration / 60);
-          distanciaTotal += summary.distance / 1000;
+        }
+
+        const segmentos = data?.features?.[0]?.properties?.segments;
+        if (!Array.isArray(segmentos) || segmentos.length < paradasPendentes.length) {
+          throw new Error("Não foi possível calcular a previsão das paradas.");
+        }
+
+        for (const [indice, parada] of paradasPendentes.entries()) {
+          const segmento = segmentos[indice];
+          tempoTotal += segmento.duration;
+          distanciaTotal += segmento.distance / 1000;
           resultados.push({
             nome: parada.nome,
             coords: parada.coords,
-            tempo: `${tempoTotal} min`,
+            tempo: `${Math.ceil(tempoTotal / 60)} min`,
             distancia: `${distanciaTotal.toFixed(1)} km`,
           });
-          pontoAtual = parada.coords;
         }
-        setParadas(resultados);
+        if (!ignorarResultado) setParadas(resultados);
       } catch (err) {
+        if (ignorarResultado) return;
+
         console.error(err);
         setErroORS(
           err instanceof Error
@@ -123,17 +165,15 @@ function AlunoContent() {
             : "Falha ao consultar OpenRouteService."
         );
       } finally {
-        setCarregando(false);
+        if (!ignorarResultado) setCarregando(false);
       }
-    }, 350);
+    }, 700);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      ignorarResultado = true;
     };
-  // A localização do ônibus atualiza o mapa em tempo real. Os tempos são
-  // recalculados apenas ao escolher uma rota, para não exceder o limite da
-  // API de rotas com uma chamada a cada atualização do GPS.
-  }, [rotaSelecionada]);
+  }, [rotaSelecionada, onibusPosicao, proximaParada]);
 
   if (!rotaSelecionada) return <div className="p-8">Nenhuma rota disponivel.</div>;
 

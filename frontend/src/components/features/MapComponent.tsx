@@ -383,21 +383,8 @@ function encontrarParadaNaParteDaRota(
  * =========================================================
  * ENCONTRA AS PARADAS NA ORDEM DA ROTA
  * =========================================================
- *
- * Como o ORS recebeu:
- *
- * origem → parada 1 → parada 2 → parada 3...
- *
- * a geometria também segue essa ordem.
- *
- * Então procuramos:
- *
- * parada 1 somente depois da origem
- * parada 2 depois da parada 1
- * parada 3 depois da parada 2
- *
- * Isso evita pegar um trecho errado da rota.
  */
+
 function encontrarPosicoesDasParadas(
   rota: Ponto[],
   origem: Ponto,
