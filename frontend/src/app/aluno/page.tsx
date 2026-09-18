@@ -16,6 +16,24 @@ type ParadaCalc = {
   distancia: string;
 };
 
+type LeituraOnibus = {
+  posicao: [number, number];
+  atualizadoEm: number;
+};
+
+function distanciaMetros(a: [number, number], b: [number, number]) {
+  const raioDaTerra = 6371000;
+  const lat1 = (a[0] * Math.PI) / 180;
+  const lat2 = (b[0] * Math.PI) / 180;
+  const deltaLat = ((b[0] - a[0]) * Math.PI) / 180;
+  const deltaLng = ((b[1] - a[1]) * Math.PI) / 180;
+  const h =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+
+  return 2 * raioDaTerra * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
 // 1. Todo o conteúdo original e lógica da página ficam aqui dentro
 function AlunoContent() {
   const bairros = useMemo(() => getBairrosUnicos(), []);
@@ -39,12 +57,14 @@ function AlunoContent() {
   const [onibusVelocidade, setOnibusVelocidade] = useState<number | null>(null);
   const [erroORS, setErroORS] = useState<string | null>(null);
   const [proximaParada, setProximaParada] = useState(0);
+  const ultimaLeituraRef = useRef<LeituraOnibus | null>(null);
 
   // Onibus em tempo real (Firebase)
   useEffect(() => {
     // Não mostra a posição anterior enquanto a nova rota é carregada.
     setOnibusPosicao(null);
     setOnibusVelocidade(null);
+    ultimaLeituraRef.current = null;
 
     if (!firebaseConfigured || !rotaSelecionada) return;
     const onibusRef = ref(db, `onibus/${rotaSelecionada.id}`);
@@ -52,7 +72,7 @@ function AlunoContent() {
       const data = snap.val();
       const lat = Number(data?.lat);
       const lng = Number(data?.lng);
-      const velocidade = Number(data?.speedKmH ?? Number(data?.speed) * 3.6);
+      const atualizadoEm = Number(data?.atualizadoEm);
       const temPosicaoValida =
         data?.lat != null &&
         data?.lng != null &&
@@ -63,12 +83,43 @@ function AlunoContent() {
       // estado `false` é mantido somente por compatibilidade com registros
       // antigos; ao encerrar, o motorista remove o registro por completo.
       if (data?.viagemAtiva !== false && temPosicaoValida) {
-        setOnibusPosicao([lat, lng]);
-        setOnibusVelocidade(
-          Number.isFinite(velocidade) && velocidade >= 0
-            ? velocidade
-            : null
-        );
+        const posicaoAtual: [number, number] = [lat, lng];
+        const instanteAtual = Number.isFinite(atualizadoEm)
+          ? atualizadoEm
+          : Date.now();
+        const leituraAnterior = ultimaLeituraRef.current;
+
+        setOnibusPosicao(posicaoAtual);
+
+        if (leituraAnterior && instanteAtual > leituraAnterior.atualizadoEm) {
+          const metrosPercorridos = distanciaMetros(
+            leituraAnterior.posicao,
+            posicaoAtual
+          );
+          const horasDecorridas =
+            (instanteAtual - leituraAnterior.atualizadoEm) / 3600000;
+          const velocidadeCalculada =
+            horasDecorridas > 0
+              ? (metrosPercorridos / 1000) / horasDecorridas
+              : null;
+
+          // Pequenas oscilações do GPS não contam como movimento do ônibus.
+          setOnibusVelocidade(
+            metrosPercorridos < 10 ||
+              !velocidadeCalculada ||
+              velocidadeCalculada > 90
+              ? 0
+              : velocidadeCalculada
+          );
+        } else {
+          // A primeira leitura não confirma se o ônibus está em movimento.
+          setOnibusVelocidade(null);
+        }
+
+        ultimaLeituraRef.current = {
+          posicao: posicaoAtual,
+          atualizadoEm: instanteAtual,
+        };
       } else {
         setOnibusPosicao(null);
         setOnibusVelocidade(null);
