@@ -219,31 +219,6 @@ function pontoMaisProximoNoSegmento(
 }
 
 /*
- * Retorna o progresso do ponto dentro de um segmento.
- * 0 representa o início e 1 representa o fim.
- */
-function progressoNoSegmento(
-  ponto: Ponto,
-  inicio: Ponto,
-  fim: Ponto
-) {
-  const dx = fim[1] - inicio[1];
-  const dy = fim[0] - inicio[0];
-  const tamanhoQuadrado = dx * dx + dy * dy;
-
-  if (tamanhoQuadrado === 0) {
-    return 0;
-  }
-
-  const progresso =
-    ((ponto[1] - inicio[1]) * dx +
-      (ponto[0] - inicio[0]) * dy) /
-    tamanhoQuadrado;
-
-  return Math.max(0, Math.min(1, progresso));
-}
-
-/*
  * =========================================================
  * POSIÇÃO DO ÔNIBUS NA ROTA
  * =========================================================
@@ -259,7 +234,6 @@ function encontrarPosicaoNaRota(
     return {
       ponto: onibus,
       segmento: 0,
-      progresso: 0,
     };
   }
 
@@ -267,7 +241,6 @@ function encontrarPosicaoNaRota(
     return {
       ponto: rota[0],
       segmento: 0,
-      progresso: 0,
     };
   }
 
@@ -296,163 +269,7 @@ function encontrarPosicaoNaRota(
   return {
     ponto: melhorPonto,
     segmento: melhorSegmento,
-    progresso:
-      melhorSegmento +
-      progressoNoSegmento(
-        melhorPonto,
-        rota[melhorSegmento],
-        rota[melhorSegmento + 1]
-      ),
   };
-}
-
-/*
- * =========================================================
- * POSIÇÃO DE UMA PARADA NA ROTA
- * =========================================================
- *
- * Procura o ponto da rua mais próximo da parada,
- * mas somente dentro de uma parte específica da rota.
- *
- * Isso é importante para respeitar a ordem das paradas.
- */
-function encontrarParadaNaParteDaRota(
-  rota: Ponto[],
-  parada: Ponto,
-  inicio: number,
-  fim: number
-) {
-  if (rota.length < 2) {
-    return {
-      ponto: rota[0] ?? parada,
-      segmento: 0,
-      progresso: 0,
-    };
-  }
-
-  const inicioSeguro = Math.max(
-    0,
-    Math.min(inicio, rota.length - 2)
-  );
-
-  const fimSeguro = Math.max(
-    inicioSeguro + 1,
-    Math.min(fim, rota.length - 1)
-  );
-
-  let menorDistancia = Infinity;
-  let melhorPonto = rota[inicioSeguro];
-  let melhorSegmento = inicioSeguro;
-
-  for (
-    let i = inicioSeguro;
-    i < fimSeguro;
-    i++
-  ) {
-    const ponto =
-      pontoMaisProximoNoSegmento(
-        parada,
-        rota[i],
-        rota[i + 1]
-      );
-
-    const distancia =
-      distanciaQuadrada(parada, ponto);
-
-    if (distancia < menorDistancia) {
-      menorDistancia = distancia;
-      melhorPonto = ponto;
-      melhorSegmento = i;
-    }
-  }
-
-  return {
-    ponto: melhorPonto,
-    segmento: melhorSegmento,
-    progresso:
-      melhorSegmento +
-      progressoNoSegmento(
-        melhorPonto,
-        rota[melhorSegmento],
-        rota[melhorSegmento + 1]
-      ),
-  };
-}
-
-/*
- * =========================================================
- * ENCONTRA AS PARADAS NA ORDEM DA ROTA
- * =========================================================
- */
-
-function encontrarPosicoesDasParadas(
-  rota: Ponto[],
-  origem: Ponto,
-  paradas: Parada[]
-) {
-  const resultado: {
-    ponto: Ponto;
-    segmento: number;
-    progresso: number;
-  }[] = [];
-
-  if (rota.length < 2) {
-    return resultado;
-  }
-
-  let inicioBusca = 0;
-
-  /*
-   * Primeiro localizamos a origem.
-   */
-  const origemRota =
-    encontrarParadaNaParteDaRota(
-      rota,
-      origem,
-      0,
-      Math.min(
-        rota.length - 1,
-        Math.max(20, Math.floor(rota.length * 0.25))
-      )
-    );
-
-  inicioBusca = origemRota.segmento;
-
-  for (let i = 0; i < paradas.length; i++) {
-    /*
-     * Para cada parada, procuramos somente
-     * depois da parada anterior.
-     */
-    const restante =
-      rota.length - inicioBusca;
-
-    /*
-     * Como a próxima parada está depois da anterior,
-     * usamos o restante da geometria.
-     */
-    const paradaRota =
-      encontrarParadaNaParteDaRota(
-        rota,
-        paradas[i].coords,
-        inicioBusca,
-        rota.length - 1
-      );
-
-    resultado.push(paradaRota);
-
-    /*
-     * A próxima busca começa depois
-     * desta parada.
-     */
-    inicioBusca = Math.min(
-      paradaRota.segmento + 1,
-      rota.length - 2
-    );
-
-    void restante;
-  }
-
-  return resultado;
 }
 
 export default function MapComponent({
@@ -642,182 +459,62 @@ export default function MapComponent({
   ]);
 
   /*
-   * =========================================================
-   * POSIÇÕES DAS PARADAS NA ROTA
-   * =========================================================
-   *
-   * Calculamos a posição de cada parada
-   * na geometria original.
+   * A linha exibida é uma rota nova, calculada somente entre a localização
+   * atual do ônibus e a parada atual. Assim ela nunca atravessa ou aponta
+   * para as outras paradas da rota geral.
    */
-  const posicoesDasParadas =
-    useMemo(() => {
-      if (
-        rotaRuas.length < 2 ||
-        paradas.length === 0
-      ) {
-        return [];
-      }
+  const [rotaRestante, setRotaRestante] = useState<Ponto[]>([]);
 
-      return encontrarPosicoesDasParadas(
-        rotaRuas,
-        origem,
-        paradas
-      );
-    }, [
-      rotaRuas,
-      origem,
-      paradas,
-    ]);
-
-  /*
-   * =========================================================
-   * TRECHO TRACEJADO
-   * =========================================================
-   *
-   * REGRA:
-   *
-   * 🚌 ônibus → próxima parada
-   *
-   * MAS:
-   *
-   * o caminho entre eles é formado SOMENTE
-   * pelos pontos da rota original.
-   */
-  const rotaRestante = useMemo(() => {
-    if (
-      rotaRuas.length < 2 ||
-      !onibusPosicao ||
-      proximaParada >= paradas.length
-    ) {
-      return [];
+  useEffect(() => {
+    if (!onibusPosicao || proximaParada >= paradas.length) {
+      setRotaRestante([]);
+      return;
     }
 
-    /*
-     * Precisamos ter encontrado a próxima parada
-     * dentro da geometria da rota.
-     */
-    if (
-      !posicoesDasParadas[
-        proximaParada
-      ]
-    ) {
-      return [];
-    }
+    setRotaRestante([]);
+    let cancelado = false;
+    const paradaAtual = paradas[proximaParada];
 
-    /*
-     * -----------------------------------------------------
-     * POSIÇÃO DO ÔNIBUS
-     * -----------------------------------------------------
-     */
-    const posicaoOnibus =
-      encontrarPosicaoNaRota(
-        rotaRuas,
-        onibusPosicao
-      );
+    async function buscarTrechoAtual() {
+      try {
+        const response = await fetch("/api/rotas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            coordinates: [
+              [onibusPosicao[1], onibusPosicao[0]],
+              [paradaAtual.coords[1], paradaAtual.coords[0]],
+            ],
+          }),
+        });
+        const data = await response.json();
 
-    /*
-     * -----------------------------------------------------
-     * POSIÇÃO DA PRÓXIMA PARADA
-     * -----------------------------------------------------
-     */
-    const posicaoParada =
-      posicoesDasParadas[
-        proximaParada
-      ];
-
-    /*
-     * -----------------------------------------------------
-     * CASO NORMAL
-     * -----------------------------------------------------
-     *
-     * O ônibus está antes da parada.
-     */
-    if (
-      posicaoOnibus.progresso <=
-      posicaoParada.progresso
-    ) {
-      const trecho = [
-        /*
-         * COMEÇA NO ÔNIBUS.
-         *
-         * Esse ponto foi projetado sobre
-         * a rua original.
-         */
-        posicaoOnibus.ponto,
-
-        /*
-         * CONTINUA EXATAMENTE PELA
-         * GEOMETRIA ORIGINAL DO ORS.
-         */
-        ...rotaRuas.slice(
-          posicaoOnibus.segmento + 1,
-          posicaoParada.segmento + 1
-        ),
-
-        /*
-         * TERMINA NO PONTO DA RUA MAIS
-         * PRÓXIMO DA PARADA.
-         *
-         * NÃO usamos a coordenada crua
-         * da parada aqui.
-         */
-        posicaoParada.ponto,
-      ];
-
-      /*
-       * Remove pontos duplicados consecutivos.
-       */
-      return trecho.filter(
-        (ponto, index, array) => {
-          if (index === 0) {
-            return true;
-          }
-
-          return (
-            ponto[0] !==
-              array[index - 1][0] ||
-            ponto[1] !==
-              array[index - 1][1]
-          );
-        }
-      );
-    }
-
-    /*
-     * Se o GPS já estiver depois da parada atual, ela continua sendo a
-     * próxima até o ônibus entrar no raio de chegada. Desenhamos a rota no
-     * sentido inverso para que o caminho não desapareça nem pule a parada.
-     */
-    const trechoDeVolta = [
-      posicaoOnibus.ponto,
-      ...rotaRuas
-        .slice(
-          posicaoParada.segmento + 1,
-          posicaoOnibus.segmento + 1
-        )
-        .reverse(),
-      posicaoParada.ponto,
-    ];
-
-    return trechoDeVolta.filter(
-      (ponto, index, array) => {
-        if (index === 0) {
-          return true;
+        if (cancelado || !response.ok || !data?.features?.length) {
+          return;
         }
 
-        return (
-          ponto[0] !== array[index - 1][0] ||
-          ponto[1] !== array[index - 1][1]
+        const geometria = data.features[0].geometry?.coordinates;
+        if (!Array.isArray(geometria)) {
+          return;
+        }
+
+        setRotaRestante(
+          geometria.map(([lng, lat]: [number, number]) => [lat, lng])
         );
+      } catch (error) {
+        if (!cancelado) {
+          console.error("Erro ao calcular o trecho até a parada:", error);
+          setRotaRestante([]);
+        }
       }
-    );
-  }, [
-    rotaRuas,
-    onibusPosicao,
-    proximaParada,
-    paradas,
-    posicoesDasParadas,
-  ]);
+    }
+
+    void buscarTrechoAtual();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [onibusPosicao, paradas, proximaParada]);
 
   /*
    * =========================================================

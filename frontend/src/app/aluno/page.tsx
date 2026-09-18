@@ -36,6 +36,7 @@ function AlunoContent() {
   const [carregando, setCarregando] = useState(true);
   const [mostrarMapa, setMostrarMapa] = useState(false);
   const [onibusPosicao, setOnibusPosicao] = useState<[number, number] | null>(null);
+  const [onibusVelocidade, setOnibusVelocidade] = useState<number | null>(null);
   const [erroORS, setErroORS] = useState<string | null>(null);
   const [proximaParada, setProximaParada] = useState(0);
 
@@ -43,6 +44,7 @@ function AlunoContent() {
   useEffect(() => {
     // Não mostra a posição anterior enquanto a nova rota é carregada.
     setOnibusPosicao(null);
+    setOnibusVelocidade(null);
 
     if (!firebaseConfigured || !rotaSelecionada) return;
     const onibusRef = ref(db, `onibus/${rotaSelecionada.id}`);
@@ -50,6 +52,7 @@ function AlunoContent() {
       const data = snap.val();
       const lat = Number(data?.lat);
       const lng = Number(data?.lng);
+      const velocidade = Number(data?.speedKmH ?? Number(data?.speed) * 3.6);
       const temPosicaoValida =
         data?.lat != null &&
         data?.lng != null &&
@@ -61,8 +64,14 @@ function AlunoContent() {
       // antigos; ao encerrar, o motorista remove o registro por completo.
       if (data?.viagemAtiva !== false && temPosicaoValida) {
         setOnibusPosicao([lat, lng]);
+        setOnibusVelocidade(
+          Number.isFinite(velocidade) && velocidade >= 0
+            ? velocidade
+            : null
+        );
       } else {
         setOnibusPosicao(null);
+        setOnibusVelocidade(null);
       }
     });
     return () => unsub();
@@ -150,7 +159,10 @@ function AlunoContent() {
           resultados.push({
             nome: parada.nome,
             coords: parada.coords,
-            tempo: `${Math.ceil(tempoTotal / 60)} min`,
+            tempo:
+              onibusVelocidade && onibusVelocidade >= 3
+                ? `${Math.ceil((distanciaTotal / onibusVelocidade) * 60)} min`
+                : "Aguardando o ônibus se mover",
             distancia: `${distanciaTotal.toFixed(1)} km`,
           });
         }
@@ -173,7 +185,7 @@ function AlunoContent() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       ignorarResultado = true;
     };
-  }, [rotaSelecionada, onibusPosicao, proximaParada]);
+  }, [rotaSelecionada, onibusPosicao, onibusVelocidade, proximaParada]);
 
   if (!rotaSelecionada) return <div className="p-8">Nenhuma rota disponivel.</div>;
 
