@@ -473,6 +473,7 @@ export default function MapComponent({
 
     setRotaRestante([]);
     let cancelado = false;
+    const posicaoAtual = onibusPosicao;
     const paradaAtual = paradas[proximaParada];
 
     async function buscarTrechoAtual() {
@@ -482,7 +483,7 @@ export default function MapComponent({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             coordinates: [
-              [onibusPosicao[1], onibusPosicao[0]],
+              [posicaoAtual[1], posicaoAtual[0]],
               [paradaAtual.coords[1], paradaAtual.coords[0]],
             ],
           }),
