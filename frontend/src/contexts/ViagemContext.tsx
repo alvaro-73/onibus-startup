@@ -9,28 +9,15 @@ import {
   ReactNode,
 } from "react";
 
-import { get, ref, remove, set } from "firebase/database";
+import { ref, remove, set } from "firebase/database";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
-import { ROTAS, getRotaPorBairro, getRotaPorId } from "@/data/rotas";
+import { ROTAS, getRotaPorBairro } from "@/data/rotas";
 
 type Posicao = {
   lat: number;
   lng: number;
 };
-
-function distanciaMetros(a: Posicao, b: Posicao) {
-  const raioDaTerra = 6371000;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
-  const deltaLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const deltaLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const h =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
-
-  return 2 * raioDaTerra * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
 
 type ViagemContextType = {
   viagemAtiva: boolean;
@@ -74,9 +61,6 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
 
   // Guarda a rota atual sem depender da página /motorista
   const rotaIdRef = useRef<string | null>(null);
-  const proximaParadaRef = useRef(0);
-  const entradaNaParadaEmRef = useRef<number | null>(null);
-  const ultimaPosicaoAceitaRef = useRef<{ posicao: Posicao; em: number } | null>(null);
 
   // AUTH
   useEffect(() => {
@@ -152,61 +136,11 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
 
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          const precisao = position.coords.accuracy;
-          const now = position.timestamp || Date.now();
-
-          // Leituras com baixa precisão são a principal causa de o ônibus
-          // "pular" no mapa e concluir uma parada errada.
-          if (!Number.isFinite(precisao) || precisao > 40) {
-            setStatusIA("⚠️ Aguardando GPS mais preciso");
-            return;
-          }
-
-          const posicaoAtual = { lat, lng };
-          const leituraAnterior = ultimaPosicaoAceitaRef.current;
-          if (leituraAnterior) {
-            const metrosPercorridos = distanciaMetros(
-              leituraAnterior.posicao,
-              posicaoAtual
-            );
-            const segundosDecorridos = (now - leituraAnterior.em) / 1000;
-
-            // Descarta saltos impossíveis, comuns em oscilação de GPS.
-            if (
-              segundosDecorridos > 0 &&
-              (metrosPercorridos / segundosDecorridos) * 3.6 > 100
-            ) {
-              return;
-            }
-          }
-
-          ultimaPosicaoAceitaRef.current = { posicao: posicaoAtual, em: now };
 
           const velocidade = position.coords.speed ?? 0;
           const velocidadeKmH = velocidade * 3.6;
 
-          const rota = getRotaPorId(rotaId);
-          const paradaAtual = rota?.paradas[proximaParadaRef.current];
-          if (paradaAtual) {
-            const distanciaDaParada = distanciaMetros(posicaoAtual, {
-              lat: paradaAtual.coords[0],
-              lng: paradaAtual.coords[1],
-            });
-
-            if (distanciaDaParada <= 50) {
-              if (entradaNaParadaEmRef.current === null) {
-                entradaNaParadaEmRef.current = now;
-              } else if (now - entradaNaParadaEmRef.current >= 10000) {
-                proximaParadaRef.current = Math.min(
-                  proximaParadaRef.current + 1,
-                  rota.paradas.length
-                );
-                entradaNaParadaEmRef.current = null;
-              }
-            } else {
-              entradaNaParadaEmRef.current = null;
-            }
-          }
+          const now = Date.now();
 
           setPosicao({
             lat,
@@ -230,8 +164,6 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
             lng,
             speed: velocidade,
             speedKmH: velocidadeKmH,
-            precisao,
-            proximaParada: proximaParadaRef.current,
 
             atualizadoEm: now,
 
@@ -294,9 +226,6 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
     if (!rota) return;
 
     rotaIdRef.current = rota.id;
-    proximaParadaRef.current = 0;
-    entradaNaParadaEmRef.current = null;
-    ultimaPosicaoAceitaRef.current = null;
     setRotaAtivaId(rota.id);
 
     viagemAtivaRef.current = true;
@@ -316,7 +245,6 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
       lng: rota.origem[1],
       viagemAtiva: true,
       aguardandoGps: true,
-      proximaParada: 0,
       atualizadoEm: Date.now(),
       motoristaId: auth.currentUser?.uid ?? null,
       motorista: auth.currentUser?.email ?? "",
@@ -344,9 +272,6 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
     setViagemAtiva(false);
     setRotaAtivaId(null);
     setVelocidadeAtual(0);
-    proximaParadaRef.current = 0;
-    entradaNaParadaEmRef.current = null;
-    ultimaPosicaoAceitaRef.current = null;
 
     localStorage.removeItem("viagemAtiva");
     localStorage.removeItem("rotaViagemAtiva");
@@ -382,18 +307,13 @@ export function ViagemProvider({ children }: { children: ReactNode }) {
       rotaId &&
       watchIdRef.current === null
     ) {
-      void get(ref(db, `onibus/${rotaId}`)).then((snapshot) => {
-        const proximaParada = Number(snapshot.val()?.proximaParada);
-        proximaParadaRef.current = Number.isInteger(proximaParada)
-          ? Math.max(0, proximaParada)
-          : 0;
+      rotaIdRef.current = rotaId;
+      setRotaAtivaId(rotaId);
 
-        rotaIdRef.current = rotaId;
-        setRotaAtivaId(rotaId);
-        viagemAtivaRef.current = true;
-        setViagemAtiva(true);
-        iniciarRastreamento(rotaId);
-      });
+      viagemAtivaRef.current = true;
+      setViagemAtiva(true);
+
+      iniciarRastreamento(rotaId);
     }
   }, []);
 

@@ -45,13 +45,6 @@ function AlunoContent() {
       const r = getRotaPorId(rotaInicialId);
       if (r) return r.bairro;
     }
-    const bairroSalvo =
-      typeof window !== "undefined"
-        ? localStorage.getItem("bairroAlunoSelecionado")
-        : null;
-    if (bairroSalvo && getRotaPorBairro(bairroSalvo)) {
-      return bairroSalvo;
-    }
     return bairros[0] ?? "";
   });
 
@@ -65,16 +58,6 @@ function AlunoContent() {
   const [erroORS, setErroORS] = useState<string | null>(null);
   const [proximaParada, setProximaParada] = useState(0);
   const ultimaLeituraRef = useRef<LeituraOnibus | null>(null);
-  const ultimaPrevisaoEmRef = useRef(0);
-
-  useEffect(() => {
-    localStorage.setItem("bairroAlunoSelecionado", bairro);
-  }, [bairro]);
-
-  useEffect(() => {
-    ultimaPrevisaoEmRef.current = 0;
-    setProximaParada(0);
-  }, [rotaSelecionada]);
 
   // Onibus em tempo real (Firebase)
   useEffect(() => {
@@ -90,7 +73,6 @@ function AlunoContent() {
       const lat = Number(data?.lat);
       const lng = Number(data?.lng);
       const atualizadoEm = Number(data?.atualizadoEm);
-      const indiceDaProximaParada = Number(data?.proximaParada);
       const temPosicaoValida =
         data?.lat != null &&
         data?.lng != null &&
@@ -108,11 +90,6 @@ function AlunoContent() {
         const leituraAnterior = ultimaLeituraRef.current;
 
         setOnibusPosicao(posicaoAtual);
-        setProximaParada(
-          Number.isInteger(indiceDaProximaParada)
-            ? Math.max(0, Math.min(indiceDaProximaParada, rotaSelecionada.paradas.length))
-            : 0
-        );
 
         if (leituraAnterior && instanteAtual > leituraAnterior.atualizadoEm) {
           const metrosPercorridos = distanciaMetros(
@@ -146,11 +123,36 @@ function AlunoContent() {
       } else {
         setOnibusPosicao(null);
         setOnibusVelocidade(null);
-        setProximaParada(0);
       }
     });
     return () => unsub();
   }, [rotaSelecionada]);
+
+  // A previsão só avança quando o ônibus realmente chega à parada atual.
+  useEffect(() => {
+    setProximaParada(0);
+  }, [rotaSelecionada]);
+
+  useEffect(() => {
+    if (!onibusPosicao || proximaParada >= rotaSelecionada.paradas.length) {
+      return;
+    }
+
+    const paradaAtual = rotaSelecionada.paradas[proximaParada];
+    const raioDaTerra = 6371000;
+    const lat1 = (onibusPosicao[0] * Math.PI) / 180;
+    const lat2 = (paradaAtual.coords[0] * Math.PI) / 180;
+    const deltaLat = ((paradaAtual.coords[0] - onibusPosicao[0]) * Math.PI) / 180;
+    const deltaLng = ((paradaAtual.coords[1] - onibusPosicao[1]) * Math.PI) / 180;
+    const h =
+      Math.sin(deltaLat / 2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+    const distancia = 2 * raioDaTerra * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+
+    if (distancia <= 50) {
+      setProximaParada((atual) => Math.min(atual + 1, rotaSelecionada.paradas.length));
+    }
+  }, [onibusPosicao, proximaParada, rotaSelecionada]);
 
   // A previsão começa na posição atual do ônibus e é atualizada a cada
   // nova localização recebida do GPS.
@@ -160,10 +162,8 @@ function AlunoContent() {
     setErroORS(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     let ignorarResultado = false;
-    const atraso = Math.max(0, 30000 - (Date.now() - ultimaPrevisaoEmRef.current));
 
     debounceRef.current = setTimeout(async () => {
-      ultimaPrevisaoEmRef.current = Date.now();
       setCarregando(true);
       const pontoAtual = onibusPosicao ?? rotaSelecionada.origem;
       const paradasPendentes = rotaSelecionada.paradas.slice(proximaParada);
@@ -230,7 +230,7 @@ function AlunoContent() {
       } finally {
         if (!ignorarResultado) setCarregando(false);
       }
-    }, atraso);
+    }, 700);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -296,7 +296,6 @@ function AlunoContent() {
          origem={rotaSelecionada.origem}
          paradas={rotaSelecionada.paradas}
          onibusPosicao={onibusPosicao}
-         proximaParada={proximaParada}
         />
         </div>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -23,8 +23,9 @@ type Props = {
   origem: Ponto;
   paradas: Parada[];
   onibusPosicao?: Ponto | null;
-  proximaParada: number;
 };
+
+const RAIO_PARADA_METROS = 50;
 
 const defaultIcon = L.icon({
   iconUrl:
@@ -121,59 +122,10 @@ function Recenter({ pos }: { pos: Ponto }) {
   const map = useMap();
 
   useEffect(() => {
-    map.panTo(pos, { animate: true, duration: 1.5 });
+    map.setView(pos);
   }, [pos, map]);
 
   return null;
-}
-
-function AnimatedBusMarker({
-  destino,
-  nomeDaProximaParada,
-}: {
-  destino: Ponto;
-  nomeDaProximaParada: string;
-}) {
-  const [posicao, setPosicao] = useState<Ponto>(destino);
-  const posicaoAnteriorRef = useRef<Ponto>(destino);
-
-  useEffect(() => {
-    const inicio = posicaoAnteriorRef.current;
-    const inicioAnimacao = performance.now();
-    const duracao = 1800;
-    let frame: number;
-
-    function animar(agora: number) {
-      const progresso = Math.min((agora - inicioAnimacao) / duracao, 1);
-      const suavizado = 1 - (1 - progresso) ** 3;
-      const proximaPosicao: Ponto = [
-        inicio[0] + (destino[0] - inicio[0]) * suavizado,
-        inicio[1] + (destino[1] - inicio[1]) * suavizado,
-      ];
-
-      posicaoAnteriorRef.current = proximaPosicao;
-      setPosicao(proximaPosicao);
-
-      if (progresso < 1) {
-        frame = requestAnimationFrame(animar);
-      } else {
-        posicaoAnteriorRef.current = destino;
-      }
-    }
-
-    frame = requestAnimationFrame(animar);
-    return () => cancelAnimationFrame(frame);
-  }, [destino]);
-
-  return (
-    <Marker position={posicao} icon={onibusIcon}>
-      <Popup>
-        🚌 Ônibus em tempo real
-        <br />
-        Próxima parada: {nomeDaProximaParada}
-      </Popup>
-    </Marker>
-  );
 }
 
 /*
@@ -324,13 +276,20 @@ export default function MapComponent({
   origem,
   paradas,
   onibusPosicao,
-  proximaParada,
 }: Props) {
   const [rotaRuas, setRotaRuas] =
     useState<Ponto[]>([]);
 
   const [erroRota, setErroRota] =
     useState<string | null>(null);
+
+  /*
+   * 0 = parada 1
+   * 1 = parada 2
+   * 2 = parada 3
+   */
+  const [proximaParada, setProximaParada] =
+    useState(0);
 
   /*
    * =========================================================
@@ -449,6 +408,57 @@ export default function MapComponent({
   }, [origem, paradas]);
 
   /*
+   * =========================================================
+   * DETECTA CHEGADA À PRÓXIMA PARADA
+   * =========================================================
+   */
+  useEffect(() => {
+    if (
+      !onibusPosicao ||
+      paradas.length === 0 ||
+      proximaParada >= paradas.length
+    ) {
+      return;
+    }
+
+    const paradaAtual =
+      paradas[proximaParada];
+
+    const distancia =
+      distanciaMetros(
+        onibusPosicao,
+        paradaAtual.coords
+      );
+
+    console.log(
+      `Distância até ${paradaAtual.nome}: ${Math.round(
+        distancia
+      )}m`
+    );
+
+    if (
+      distancia <=
+      RAIO_PARADA_METROS
+    ) {
+      console.log(
+        `Parada concluída: ${paradaAtual.nome}`
+      );
+
+      setProximaParada(
+        (atual) =>
+          Math.min(
+            atual + 1,
+            paradas.length
+          )
+      );
+    }
+  }, [
+    onibusPosicao,
+    paradas,
+    proximaParada,
+  ]);
+
+  /*
    * A linha exibida é uma rota nova, calculada somente entre a localização
    * atual do ônibus e a parada atual. Assim ela nunca atravessa ou aponta
    * para as outras paradas da rota geral.
@@ -515,7 +525,24 @@ export default function MapComponent({
    * O marcador fica sobre a rua mais próxima
    * da rota original.
    */
-  const onibusPosicaoExibida = onibusPosicao ?? null;
+  const onibusPosicaoExibida =
+    useMemo<Ponto | null>(() => {
+      if (!onibusPosicao) {
+        return null;
+      }
+
+      if (rotaRuas.length < 2) {
+        return onibusPosicao;
+      }
+
+      return encontrarPosicaoNaRota(
+        rotaRuas,
+        onibusPosicao
+      ).ponto;
+    }, [
+      rotaRuas,
+      onibusPosicao,
+    ]);
 
   const centroMapa =
     onibusPosicaoExibida ?? origem;
@@ -636,14 +663,24 @@ export default function MapComponent({
             ÔNIBUS
         ================================================= */}
         {onibusPosicaoExibida && (
-          <AnimatedBusMarker
-            destino={onibusPosicaoExibida}
-            nomeDaProximaParada={
-              proximaParada < paradas.length
-                ? paradas[proximaParada].nome
-                : "Fim da rota"
+          <Marker
+            position={
+              onibusPosicaoExibida
             }
-          />
+            icon={onibusIcon}
+          >
+            <Popup>
+              🚌 Ônibus em tempo real
+              <br />
+              Próxima parada:{" "}
+              {proximaParada <
+              paradas.length
+                ? paradas[
+                    proximaParada
+                  ].nome
+                : "Fim da rota"}
+            </Popup>
+          </Marker>
         )}
 
         <Recenter pos={centroMapa} />
